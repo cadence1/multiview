@@ -1,8 +1,7 @@
 # Multiview
 
-A self-hosted, minimal clone of [holodex.net/multiview](https://holodex.net/multiview):
-track creators across **YouTube**, **Twitch**, and **Kick**, see who's live or
-upcoming, and drop live streams into a multi-cell viewing grid.
+A self-hosted site to track creators across **YouTube**, **Twitch**, and **Kick**, 
+see who's live or upcoming, and drop live streams into a multi-cell viewing grid.
 
 - **Server** (`server/`) — Express + TypeScript, SQLite storage, background
   poller that keeps a live/upcoming/offline status cache fresh.
