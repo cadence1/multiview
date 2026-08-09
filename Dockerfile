@@ -1,5 +1,9 @@
+# node:sqlite (used by the server) requires Node 22.5+ — it doesn't exist at
+# all on Node 20 (ERR_UNKNOWN_BUILTIN_MODULE). Node 22 has it unflagged, just
+# with a harmless "experimental feature" warning on stderr.
+
 # ---- build ----
-FROM node:20-bookworm-slim AS build
+FROM node:22-bookworm-slim AS build
 WORKDIR /app
 
 # Install deps first (better layer caching)
@@ -12,7 +16,7 @@ COPY . .
 RUN npm run build
 
 # ---- runtime ----
-FROM node:20-bookworm-slim AS runtime
+FROM node:22-bookworm-slim AS runtime
 WORKDIR /app/server
 ENV NODE_ENV=production
 ENV DATA_DIR=/app/server/data
