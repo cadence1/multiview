@@ -1,0 +1,14 @@
+services:
+  multiview:
+    build: .
+    ports:
+      - "8080:8080"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      - PORT=8080
+      - DATA_DIR=/app/server/data
+    volumes:
+      - ./data:/app/server/data
+    restart: unless-stopped
