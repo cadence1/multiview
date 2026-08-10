@@ -1,4 +1,4 @@
-import type { Creator, CreatorStatus, Platform } from "./types.js";
+import type { Creator, CreatorStatus, ExportedCreator, ImportResult, Platform } from "./types.js";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`/api${path}`, {
@@ -28,5 +28,10 @@ export const api = {
     }),
   removeCreator: (id: string) =>
     request<void>(`/creators/${id}`, { method: "DELETE" }),
+  importCreators: (creators: ExportedCreator[]) =>
+    request<ImportResult>("/creators/import", {
+      method: "POST",
+      body: JSON.stringify({ creators }),
+    }),
   listStatuses: () => request<CreatorStatus[]>("/status"),
 };

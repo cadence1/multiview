@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { api } from "./api.js";
-import type { Creator, CreatorStatus, Platform } from "./types.js";
+import type { Creator, CreatorStatus, ExportedCreator, ImportResult, Platform } from "./types.js";
 
 const GRID_STORAGE_KEY = "multiview.gridIds";
 
@@ -32,6 +32,7 @@ interface MultiviewState {
   refreshStatuses: () => Promise<void>;
   addCreator: (platform: Platform, query: string) => Promise<void>;
   removeCreator: (id: string) => Promise<void>;
+  importCreators: (creators: ExportedCreator[]) => Promise<ImportResult>;
   toggleGrid: (id: string) => void;
   removeFromGrid: (id: string) => void;
   clearGrid: () => void;
@@ -80,6 +81,24 @@ export const useStore = create<MultiviewState>((set, get) => ({
       gridIds: state.gridIds.filter((g) => g !== id),
     }));
     saveGridIds(get().gridIds);
+  },
+
+  importCreators: async (creators) => {
+    set({ loading: true, error: null });
+    try {
+      const result = await api.importCreators(creators);
+      await get().refreshCreators();
+      // Give the server a moment to run its immediate status checks.
+      setTimeout(() => {
+        get().refreshStatuses().catch(() => {});
+      }, 1500);
+      return result;
+    } catch (err) {
+      set({ error: err instanceof Error ? err.message : String(err) });
+      throw err;
+    } finally {
+      set({ loading: false });
+    }
   },
 
   toggleGrid: (id) => {

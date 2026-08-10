@@ -62,6 +62,12 @@ across any device that opens the app. Which ones are currently *in the grid*
 is stored per-browser (`localStorage`), so each device/tab keeps its own
 viewing layout.
 
+Use **Export**/**Import** in the sidebar to back up your tracked-creator list
+to a JSON file, or move it to another Multiview instance. Importing skips
+anything already tracked and re-checks live status immediately for whatever's
+new — it doesn't re-resolve channels over the network, so it's fast even for
+a large list.
+
 ## Notes & limitations
 
 - **No authentication.** This is meant for personal/LAN use. If you expose it

@@ -21,3 +21,24 @@ export interface CreatorStatus {
   embedId?: string;
   updatedAt: string;
 }
+
+/** Portable creator shape used for export/import — no internal id/created_at. */
+export interface ExportedCreator {
+  platform: Platform;
+  platform_id: string;
+  handle: string;
+  display_name: string;
+  avatar_url: string;
+}
+
+export interface ExportFile {
+  version: 1;
+  exportedAt: string;
+  creators: ExportedCreator[];
+}
+
+export interface ImportResult {
+  imported: number;
+  skipped: number;
+  errors: string[];
+}
