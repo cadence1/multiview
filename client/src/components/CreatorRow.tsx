@@ -1,5 +1,5 @@
 import type { Creator, CreatorStatus } from "../types.js";
-import { formatRelativeToNow } from "../utils.js";
+import { formatRelativeToNow, homeUrlFor } from "../utils.js";
 import PlatformBadge from "./PlatformBadge.js";
 
 interface Props {
@@ -17,12 +17,22 @@ export default function CreatorRow({ creator, status, inGrid, onToggleGrid, onRe
   // renders an actual embed once status flips to "live".
   const canAddToGrid = state === "live" || state === "upcoming";
 
+  function handleClick() {
+    if (canAddToGrid) {
+      onToggleGrid();
+    } else {
+      // Offline — nothing to add to the grid, so go to the creator's page instead.
+      window.open(homeUrlFor(creator), "_blank", "noopener,noreferrer");
+    }
+  }
+
   return (
     <div
-      className={`group flex items-center gap-2 rounded-md px-2 py-1.5 transition-colors ${
+      className={`group flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 transition-colors ${
         inGrid ? "bg-indigo-500/20 ring-1 ring-indigo-400/40" : "hover:bg-base-800"
-      } ${canAddToGrid ? "cursor-pointer" : ""}`}
-      onClick={() => canAddToGrid && onToggleGrid()}
+      }`}
+      onClick={handleClick}
+      title={canAddToGrid ? "Toggle in multiview" : "Open channel page"}
     >
       <div className="relative shrink-0">
         {creator.avatar_url ? (

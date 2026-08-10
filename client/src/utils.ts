@@ -1,4 +1,4 @@
-import type { Platform } from "./types.js";
+import type { Creator, Platform } from "./types.js";
 
 export const PLATFORM_LABEL: Record<Platform, string> = {
   youtube: "YouTube",
@@ -51,5 +51,22 @@ export function embedUrlFor(
       )}&parent=${encodeURIComponent(twitchParent)}&muted=true&autoplay=true`;
     case "kick":
       return `https://player.kick.com/${encodeURIComponent(embedId)}?muted=true&autoplay=true`;
+  }
+}
+
+/** The creator's channel/home page on their platform (not the embed player). */
+export function homeUrlFor(creator: Creator): string {
+  switch (creator.platform) {
+    case "youtube":
+      // handle is either an "@handle" (preferred) or, when only a bare
+      // channel ID was ever resolved, that ID itself — platform_id is
+      // always the real channel ID regardless, so fall back to that.
+      return creator.handle.startsWith("@")
+        ? `https://www.youtube.com/${creator.handle}`
+        : `https://www.youtube.com/channel/${creator.platform_id}`;
+    case "twitch":
+      return `https://www.twitch.tv/${creator.handle}`;
+    case "kick":
+      return `https://kick.com/${creator.handle}`;
   }
 }
