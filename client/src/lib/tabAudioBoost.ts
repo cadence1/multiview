@@ -59,6 +59,14 @@ export async function startTabAudioBoost(onStopped: () => void): Promise<TabAudi
   }
 
   const audioContext = new AudioContext();
+  // Created after the getDisplayMedia await above, which breaks the
+  // synchronous user-gesture chain the original click started — Chrome
+  // commonly starts an AudioContext created this way "suspended" (silent)
+  // rather than running. Explicitly resuming is a harmless no-op if it was
+  // already running, but required if it wasn't — this is what caused sound
+  // to disappear entirely once the echo (a separate, now-fixed bug) was gone.
+  await audioContext.resume();
+
   const source = audioContext.createMediaStreamSource(stream);
   const gainNode = audioContext.createGain();
   gainNode.gain.value = 1;
