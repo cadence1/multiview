@@ -1,6 +1,6 @@
 import { createPortal } from "react-dom";
 import type { Creator, CreatorStatus } from "../types.js";
-import { formatRelativeToNow } from "../utils.js";
+import { formatElapsed, formatRelativeToNow } from "../utils.js";
 import PlatformBadge from "./PlatformBadge.js";
 
 const CARD_WIDTH = 256;
@@ -13,11 +13,14 @@ interface Props {
 }
 
 /**
- * Rendered via a portal into document.body (not inline in the sidebar) so it
- * isn't clipped by the sidebar's overflow-y-auto scroll container — a
- * normally-positioned absolute child would get cut off at the sidebar's edge.
+ * Hover preview for a Live or Upcoming sidebar row. Rendered via a portal
+ * into document.body (not inline in the sidebar) so it isn't clipped by the
+ * sidebar's overflow-y-auto scroll container — a normally-positioned
+ * absolute child would get cut off at the sidebar's edge.
  */
-export default function UpcomingPreview({ creator, status, anchorRect }: Props) {
+export default function StreamPreview({ creator, status, anchorRect }: Props) {
+  const isLive = status?.state === "live";
+
   const top = Math.min(
     Math.max(8, anchorRect.top),
     window.innerHeight - CARD_HEIGHT_ESTIMATE - 8
@@ -46,11 +49,23 @@ export default function UpcomingPreview({ creator, status, anchorRect }: Props) 
           </span>
         </div>
         <p className="mt-1.5 line-clamp-2 text-xs text-slate-300">
-          {status?.title || "Upcoming"}
+          {status?.title || (isLive ? "Live now" : "Upcoming")}
         </p>
-        {status?.startTime && (
-          <p className="mt-1.5 text-[11px] font-medium text-indigo-300">
-            Starts {formatRelativeToNow(status.startTime)}
+        {isLive
+          ? status?.startTime && (
+              <p className="mt-1.5 flex items-center gap-1 text-[11px] font-medium text-red-300">
+                <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
+                Live for {formatElapsed(status.startTime)}
+              </p>
+            )
+          : status?.startTime && (
+              <p className="mt-1.5 text-[11px] font-medium text-indigo-300">
+                Starts {formatRelativeToNow(status.startTime)}
+              </p>
+            )}
+        {isLive && status?.viewerCount !== undefined && (
+          <p className="mt-1 text-[11px] text-slate-400">
+            {status.viewerCount.toLocaleString()} watching
           </p>
         )}
       </div>

@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import type { Creator, CreatorStatus } from "../types.js";
 import { formatElapsed, formatRelativeToNow, homeUrlFor } from "../utils.js";
 import PlatformBadge from "./PlatformBadge.js";
-import UpcomingPreview from "./UpcomingPreview.js";
+import StreamPreview from "./StreamPreview.js";
 
 interface Props {
   creator: Creator;
@@ -36,7 +36,7 @@ export default function CreatorRow({
 
   const rowRef = useRef<HTMLDivElement>(null);
   const [hovering, setHovering] = useState(false);
-  const showPreview = hovering && !selecting && state === "upcoming";
+  const showPreview = hovering && !selecting && (state === "upcoming" || state === "live");
 
   function handleClick() {
     if (selecting) {
@@ -117,7 +117,7 @@ export default function CreatorRow({
       </div>
 
       {showPreview && rowRef.current && (
-        <UpcomingPreview creator={creator} status={status} anchorRect={rowRef.current.getBoundingClientRect()} />
+        <StreamPreview creator={creator} status={status} anchorRect={rowRef.current.getBoundingClientRect()} />
       )}
 
       {!selecting && (
