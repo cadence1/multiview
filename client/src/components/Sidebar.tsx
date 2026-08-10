@@ -49,7 +49,9 @@ export default function Sidebar({ onAddCreator, onClose }: Props) {
   const creators = useStore((s) => s.creators);
   const statuses = useStore((s) => s.statuses);
   const gridIds = useStore((s) => s.gridIds);
+  const autoAddIds = useStore((s) => s.autoAddIds);
   const toggleGrid = useStore((s) => s.toggleGrid);
+  const toggleAutoAdd = useStore((s) => s.toggleAutoAdd);
   const removeCreator = useStore((s) => s.removeCreator);
   const importCreators = useStore((s) => s.importCreators);
 
@@ -199,7 +201,9 @@ export default function Sidebar({ onAddCreator, onClose }: Props) {
                       creator={creator}
                       status={statuses[creator.id]}
                       inGrid={gridIds.includes(creator.id)}
+                      autoAdd={autoAddIds.includes(creator.id)}
                       onToggleGrid={() => toggleGrid(creator.id)}
+                      onToggleAutoAdd={() => toggleAutoAdd(creator.id)}
                       onRemove={() => removeCreator(creator.id)}
                     />
                   ))}

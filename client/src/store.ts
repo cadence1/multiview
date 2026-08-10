@@ -3,19 +3,20 @@ import { api } from "./api.js";
 import type { Creator, CreatorStatus, ExportedCreator, ImportResult, Platform } from "./types.js";
 
 const GRID_STORAGE_KEY = "multiview.gridIds";
+const AUTO_ADD_STORAGE_KEY = "multiview.autoAddIds";
 
-function loadGridIds(): string[] {
+function loadIds(key: string): string[] {
   try {
-    const raw = localStorage.getItem(GRID_STORAGE_KEY);
+    const raw = localStorage.getItem(key);
     return raw ? JSON.parse(raw) : [];
   } catch {
     return [];
   }
 }
 
-function saveGridIds(ids: string[]) {
+function saveIds(key: string, ids: string[]) {
   try {
-    localStorage.setItem(GRID_STORAGE_KEY, JSON.stringify(ids));
+    localStorage.setItem(key, JSON.stringify(ids));
   } catch {
     // storage unavailable, ignore
   }
@@ -25,6 +26,8 @@ interface MultiviewState {
   creators: Creator[];
   statuses: Record<string, CreatorStatus>;
   gridIds: string[];
+  /** Creators that auto-open in the grid when they go live and auto-close when they end. */
+  autoAddIds: string[];
   loading: boolean;
   error: string | null;
 
@@ -36,12 +39,14 @@ interface MultiviewState {
   toggleGrid: (id: string) => void;
   removeFromGrid: (id: string) => void;
   clearGrid: () => void;
+  toggleAutoAdd: (id: string) => void;
 }
 
 export const useStore = create<MultiviewState>((set, get) => ({
   creators: [],
   statuses: {},
-  gridIds: loadGridIds(),
+  gridIds: loadIds(GRID_STORAGE_KEY),
+  autoAddIds: loadIds(AUTO_ADD_STORAGE_KEY),
   loading: false,
   error: null,
 
@@ -54,7 +59,30 @@ export const useStore = create<MultiviewState>((set, get) => ({
     const list = await api.listStatuses();
     const statuses: Record<string, CreatorStatus> = {};
     for (const s of list) statuses[s.creatorId] = s;
-    set({ statuses });
+
+    set((state) => {
+      // Pinned (autoAddIds) creators: open automatically when they go live,
+      // close automatically once they stop being live. "Stop being live"
+      // is judged against the *previous* status snapshot, not just "isn't
+      // live now" — otherwise an upcoming creator someone pre-added by hand
+      // (never live yet) would get yanked out the moment this runs.
+      let gridIds = state.gridIds;
+      let changed = false;
+      for (const id of state.autoAddIds) {
+        const wasLive = state.statuses[id]?.state === "live";
+        const isLive = statuses[id]?.state === "live";
+        const inGrid = gridIds.includes(id);
+        if (isLive && !inGrid) {
+          gridIds = [...gridIds, id];
+          changed = true;
+        } else if (!isLive && wasLive && inGrid) {
+          gridIds = gridIds.filter((g) => g !== id);
+          changed = true;
+        }
+      }
+      if (changed) saveIds(GRID_STORAGE_KEY, gridIds);
+      return { statuses, gridIds };
+    });
   },
 
   addCreator: async (platform, query) => {
@@ -79,8 +107,10 @@ export const useStore = create<MultiviewState>((set, get) => ({
     set((state) => ({
       creators: state.creators.filter((c) => c.id !== id),
       gridIds: state.gridIds.filter((g) => g !== id),
+      autoAddIds: state.autoAddIds.filter((g) => g !== id),
     }));
-    saveGridIds(get().gridIds);
+    saveIds(GRID_STORAGE_KEY, get().gridIds);
+    saveIds(AUTO_ADD_STORAGE_KEY, get().autoAddIds);
   },
 
   importCreators: async (creators) => {
@@ -107,7 +137,7 @@ export const useStore = create<MultiviewState>((set, get) => ({
       const gridIds = inGrid
         ? state.gridIds.filter((g) => g !== id)
         : [...state.gridIds, id];
-      saveGridIds(gridIds);
+      saveIds(GRID_STORAGE_KEY, gridIds);
       return { gridIds };
     });
   },
@@ -115,13 +145,33 @@ export const useStore = create<MultiviewState>((set, get) => ({
   removeFromGrid: (id) => {
     set((state) => {
       const gridIds = state.gridIds.filter((g) => g !== id);
-      saveGridIds(gridIds);
+      saveIds(GRID_STORAGE_KEY, gridIds);
       return { gridIds };
     });
   },
 
   clearGrid: () => {
-    saveGridIds([]);
+    saveIds(GRID_STORAGE_KEY, []);
     set({ gridIds: [] });
+  },
+
+  toggleAutoAdd: (id) => {
+    set((state) => {
+      const pinned = state.autoAddIds.includes(id);
+      const autoAddIds = pinned
+        ? state.autoAddIds.filter((g) => g !== id)
+        : [...state.autoAddIds, id];
+      saveIds(AUTO_ADD_STORAGE_KEY, autoAddIds);
+
+      // Pinning a creator that's already live opens it immediately, rather
+      // than waiting for the next status poll.
+      let gridIds = state.gridIds;
+      if (!pinned && state.statuses[id]?.state === "live" && !gridIds.includes(id)) {
+        gridIds = [...gridIds, id];
+        saveIds(GRID_STORAGE_KEY, gridIds);
+      }
+
+      return { autoAddIds, gridIds };
+    });
   },
 }));

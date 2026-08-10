@@ -58,11 +58,14 @@ always show as offline.
    again (or the ✕ on the cell) to remove it.
 4. The grid auto-lays-out based on how many streams are active (1×1, 2×1,
    2×2, 3×2, 3×3, …), same as Holodex's default behavior.
+5. Click the 📌 on a creator row to **pin** them — they'll open in the grid
+   automatically whenever they go live, and close automatically once they
+   end. Pinning a creator who's already live opens it right away.
 
 Which creators you *track* is stored server-side (SQLite), so it's shared
 across any device that opens the app. Which ones are currently *in the grid*
-is stored per-browser (`localStorage`), so each device/tab keeps its own
-viewing layout.
+and which are *pinned* are both stored per-browser (`localStorage`), so each
+device/tab keeps its own viewing layout and pins.
 
 Use **Export**/**Import** in the sidebar to back up your tracked-creator list
 to a JSON file, or move it to another Multiview instance. Importing skips
