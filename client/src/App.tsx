@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useStore } from "./store.js";
 import Sidebar from "./components/Sidebar.js";
 import ChatPanel from "./components/ChatPanel.js";
+import MediaPanel from "./components/MediaPanel.js";
 import MultiviewGrid from "./components/MultiviewGrid.js";
 import AddCreatorDialog from "./components/AddCreatorDialog.js";
 
@@ -13,6 +14,7 @@ export default function App() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [chatOpen, setChatOpen] = useState(false);
+  const [mediaOpen, setMediaOpen] = useState(false);
 
   useEffect(() => {
     refreshCreators().catch(() => {});
@@ -53,6 +55,14 @@ export default function App() {
           </button>
 
           <div className="flex items-center justify-end gap-2">
+            {!mediaOpen && (
+              <button
+                onClick={() => setMediaOpen(true)}
+                className="rounded-md border border-base-600 px-2 py-1 text-sm text-slate-300 hover:bg-base-800"
+              >
+                Media
+              </button>
+            )}
             {!chatOpen && (
               <button
                 onClick={() => setChatOpen(true)}
@@ -67,6 +77,7 @@ export default function App() {
           <MultiviewGrid />
         </div>
       </main>
+      {mediaOpen && <MediaPanel onClose={() => setMediaOpen(false)} />}
       {chatOpen && <ChatPanel onClose={() => setChatOpen(false)} />}
       {dialogOpen && <AddCreatorDialog onClose={() => setDialogOpen(false)} />}
     </div>

@@ -48,21 +48,41 @@ export function computeGridDims(n: number): { cols: number; rows: number } {
   return { cols, rows };
 }
 
+/**
+ * `kickMuted` only matters for Kick, which has no live player-control API —
+ * changing its volume means reloading the embed with a new `muted` value.
+ * YouTube and Twitch are always embedded muted; real volume control happens
+ * afterward through their JS player APIs (see lib/youtubeApi.ts,
+ * lib/twitchApi.ts) rather than by reloading the iframe.
+ */
 export function embedUrlFor(
   platform: Platform,
   embedId: string,
-  twitchParent: string
+  twitchParent: string,
+  kickMuted = true
 ): string {
   switch (platform) {
     case "youtube":
-      return `https://www.youtube.com/embed/${embedId}?autoplay=1&mute=1&enablejsapi=0`;
+      // enablejsapi=1 + origin are required for the IFrame Player API to be
+      // able to attach to this iframe and issue setVolume/mute commands.
+      return `https://www.youtube.com/embed/${embedId}?autoplay=1&mute=1&enablejsapi=1&origin=${encodeURIComponent(
+        window.location.origin
+      )}`;
     case "twitch":
+      // Unused by PlayerCell (Twitch cells use Twitch.Player instead, which
+      // constructs its own iframe) — kept for reference/reuse elsewhere.
       return `https://player.twitch.tv/?channel=${encodeURIComponent(
         embedId
       )}&parent=${encodeURIComponent(twitchParent)}&muted=true&autoplay=true`;
     case "kick":
-      return `https://player.kick.com/${encodeURIComponent(embedId)}?muted=true&autoplay=true`;
+      return `https://player.kick.com/${encodeURIComponent(embedId)}?muted=${kickMuted}&autoplay=true`;
   }
+}
+
+/** Master volume (0-100) scaled by a creator's own saved volume (0-100), clamped 0-100. */
+export function effectiveVolume(masterVolume: number, creatorVolume: number | undefined): number {
+  const cv = creatorVolume ?? 100;
+  return Math.min(100, Math.max(0, Math.round((masterVolume / 100) * cv)));
 }
 
 /**

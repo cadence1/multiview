@@ -4,6 +4,8 @@ import type { Creator, CreatorStatus, ExportedCreator, ImportResult, Platform } 
 
 const GRID_STORAGE_KEY = "multiview.gridIds";
 const AUTO_ADD_STORAGE_KEY = "multiview.autoAddIds";
+const MASTER_VOLUME_KEY = "multiview.masterVolume";
+const CREATOR_VOLUME_KEY = "multiview.creatorVolumes";
 
 function loadIds(key: string): string[] {
   try {
@@ -22,12 +24,47 @@ function saveIds(key: string, ids: string[]) {
   }
 }
 
+function clampVolume(v: number): number {
+  return Math.min(100, Math.max(0, Math.round(v)));
+}
+
+function loadMasterVolume(): number {
+  try {
+    const raw = localStorage.getItem(MASTER_VOLUME_KEY);
+    const n = raw ? Number(raw) : 100;
+    return Number.isFinite(n) ? clampVolume(n) : 100;
+  } catch {
+    return 100;
+  }
+}
+
+function loadCreatorVolumes(): Record<string, number> {
+  try {
+    const raw = localStorage.getItem(CREATOR_VOLUME_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveCreatorVolumes(map: Record<string, number>) {
+  try {
+    localStorage.setItem(CREATOR_VOLUME_KEY, JSON.stringify(map));
+  } catch {
+    // storage unavailable, ignore
+  }
+}
+
 interface MultiviewState {
   creators: Creator[];
   statuses: Record<string, CreatorStatus>;
   gridIds: string[];
   /** Creators that auto-open in the grid when they go live and auto-close when they end. */
   autoAddIds: string[];
+  /** Master volume (0-100), scales every cell's own volume. */
+  masterVolume: number;
+  /** Per-creator saved volume (0-100, default 100 when unset) — persists across sessions. */
+  creatorVolumes: Record<string, number>;
   loading: boolean;
   error: string | null;
 
@@ -41,6 +78,8 @@ interface MultiviewState {
   removeFromGrid: (id: string) => void;
   clearGrid: () => void;
   toggleAutoAdd: (id: string) => void;
+  setMasterVolume: (v: number) => void;
+  setCreatorVolume: (id: string, v: number) => void;
 }
 
 export const useStore = create<MultiviewState>((set, get) => ({
@@ -48,6 +87,8 @@ export const useStore = create<MultiviewState>((set, get) => ({
   statuses: {},
   gridIds: loadIds(GRID_STORAGE_KEY),
   autoAddIds: loadIds(AUTO_ADD_STORAGE_KEY),
+  masterVolume: loadMasterVolume(),
+  creatorVolumes: loadCreatorVolumes(),
   loading: false,
   error: null,
 
@@ -187,6 +228,25 @@ export const useStore = create<MultiviewState>((set, get) => ({
       }
 
       return { autoAddIds, gridIds };
+    });
+  },
+
+  setMasterVolume: (v) => {
+    const clamped = clampVolume(v);
+    try {
+      localStorage.setItem(MASTER_VOLUME_KEY, String(clamped));
+    } catch {
+      // storage unavailable, ignore
+    }
+    set({ masterVolume: clamped });
+  },
+
+  setCreatorVolume: (id, v) => {
+    const clamped = clampVolume(v);
+    set((state) => {
+      const creatorVolumes = { ...state.creatorVolumes, [id]: clamped };
+      saveCreatorVolumes(creatorVolumes);
+      return { creatorVolumes };
     });
   },
 }));

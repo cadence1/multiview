@@ -68,11 +68,16 @@ always show as offline.
    broadcaster has chat enabled); Kick has no embeddable chat, so it links
    out to kick.com instead.
 7. Click the **Multiview** title to open the same page in a new window.
+8. Click **Media** (top right) to dock a volume panel — a **Main volume**
+   slider scales every window at once, and each on-screen creator gets their
+   own slider underneath (saved per-creator, so it's remembered next time
+   they're added). YouTube and Twitch get real live volume control via their
+   official player APIs; Kick has no such API, so it's mute/unmute only.
 
 Which creators you *track* is stored server-side (SQLite), so it's shared
-across any device that opens the app. Which ones are currently *in the grid*
-and which are *pinned* are both stored per-browser (`localStorage`), so each
-device/tab keeps its own viewing layout and pins.
+across any device that opens the app. Which ones are currently *in the grid*,
+*pinned*, and each creator's saved *volume* are all stored per-browser
+(`localStorage`), so each device/tab keeps its own layout and levels.
 
 Use **Export**/**Import** in the sidebar to back up your tracked-creator list
 to a JSON file, or move it to another Multiview instance. Importing skips
