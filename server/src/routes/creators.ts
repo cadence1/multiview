@@ -33,7 +33,13 @@ creatorsRouter.post("/", async (req, res) => {
     resolved = await adapters[platform as Platform].resolveChannel(query.trim());
   } catch (err) {
     console.error(`[creators] resolve failed for ${platform}/${query}:`, err);
-    return res.status(502).json({ error: "failed to look up channel on the platform" });
+    // Surface the adapter's own message when it deliberately threw one
+    // (e.g. Twitch's "not configured" — a real, actionable distinction
+    // from "channel not found") rather than a generic string that would
+    // hide it.
+    return res.status(502).json({
+      error: err instanceof Error ? err.message : "failed to look up channel on the platform",
+    });
   }
   if (!resolved) {
     return res.status(404).json({ error: "channel not found" });

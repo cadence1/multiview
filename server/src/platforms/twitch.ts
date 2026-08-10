@@ -33,7 +33,14 @@ async function getAppToken(): Promise<string | null> {
   url.searchParams.set("client_secret", env.twitchClientSecret);
   url.searchParams.set("grant_type", "client_credentials");
   const res = await fetch(url, { method: "POST" });
-  if (!res.ok) return null;
+  if (!res.ok) {
+    // Distinguishes "creds present but wrong/revoked" from "not set at
+    // all" (credsConfigured()'s warning above) — previously silent, which
+    // made the two failure modes indistinguishable from the logs alone.
+    const body = await res.text().catch(() => "");
+    console.error(`[twitch] failed to get app access token: ${res.status} ${body}`);
+    return null;
+  }
   const data = (await res.json()) as { access_token: string; expires_in: number };
   cachedToken = {
     token: data.access_token,
@@ -119,6 +126,16 @@ async function resolveById(id: string): Promise<ResolvedChannel | null> {
 }
 
 async function resolveChannel(query: string): Promise<ResolvedChannel | null> {
+  // Without this, a missing/unconfigured TWITCH_CLIENT_ID/SECRET and a
+  // genuinely-nonexistent channel produced the identical generic "channel
+  // not found" error — misleading, since the real problem is server
+  // configuration, not the query. Throwing here (route layer surfaces the
+  // message) makes that distinguishable; a channel that's actually not
+  // found still just returns null below, same as before.
+  if (!credsConfigured()) {
+    throw new Error("Twitch isn't configured on this server — set TWITCH_CLIENT_ID and TWITCH_CLIENT_SECRET.");
+  }
+
   const parsed = parseQuery(query);
 
   if (parsed.kind === "videoId") {
