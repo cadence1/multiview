@@ -42,3 +42,10 @@ export interface PlatformAdapter {
 export function offlineStatus(creatorId: string): CreatorStatus {
   return { creatorId, state: "offline", updatedAt: new Date().toISOString() };
 }
+
+/**
+ * A scheduled stream is only surfaced as "upcoming" if it starts within this
+ * window; further out (or with no known start time) it's reported as
+ * "offline" instead, until it gets closer.
+ */
+export const UPCOMING_WINDOW_MS = 2 * 24 * 60 * 60 * 1000; // 2 days

@@ -5,7 +5,7 @@ import type {
   PlatformAdapter,
   ResolvedChannel,
 } from "./types.js";
-import { offlineStatus } from "./types.js";
+import { offlineStatus, UPCOMING_WINDOW_MS } from "./types.js";
 
 const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
@@ -275,17 +275,24 @@ async function getStatusFor(creator: CreatorRef): Promise<CreatorStatus> {
   }
 
   if (parsed.isUpcoming) {
-    return {
-      creatorId: creator.id,
-      state: "upcoming",
-      title: parsed.title,
-      thumbnailUrl: parsed.thumbnailUrl,
-      startTime: parsed.scheduledStartSeconds
-        ? new Date(Number(parsed.scheduledStartSeconds) * 1000).toISOString()
-        : undefined,
-      embedId: parsed.videoId,
-      updatedAt,
-    };
+    const startTime = parsed.scheduledStartSeconds
+      ? new Date(Number(parsed.scheduledStartSeconds) * 1000).toISOString()
+      : undefined;
+    const startMs = startTime ? new Date(startTime).getTime() : undefined;
+
+    // Only surface it as "upcoming" once it's within the window — further
+    // out (or with an unknown start time) it's reported as offline instead.
+    if (startMs !== undefined && startMs - Date.now() <= UPCOMING_WINDOW_MS) {
+      return {
+        creatorId: creator.id,
+        state: "upcoming",
+        title: parsed.title,
+        thumbnailUrl: parsed.thumbnailUrl,
+        startTime,
+        embedId: parsed.videoId,
+        updatedAt,
+      };
+    }
   }
 
   return offlineStatus(creator.id);
