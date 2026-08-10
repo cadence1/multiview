@@ -83,7 +83,10 @@ Use **Export**/**Import** in the sidebar to back up your tracked-creator list
 to a JSON file, or move it to another Multiview instance. Importing skips
 anything already tracked and re-checks live status immediately for whatever's
 new — it doesn't re-resolve channels over the network, so it's fast even for
-a large list.
+a large list. The file also carries each creator's pin and volume, and those
+survive re-import correctly even though the server assigns a brand-new
+internal ID on every import — they're matched back up by the channel's
+actual platform ID, not that internal one.
 
 ## Notes & limitations
 

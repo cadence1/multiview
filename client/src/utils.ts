@@ -12,6 +12,17 @@ export const PLATFORM_COLOR: Record<Platform, string> = {
   kick: "#53fc18",
 };
 
+/**
+ * A creator's actual, stable identity — same today, tomorrow, and on any
+ * instance you export/import into. Use this (not creator.id) as the key for
+ * anything meant to persist across a re-import: creator.id is just a
+ * database primary key that a fresh nanoid() replaces on every import (and
+ * even a plain untrack-then-re-add on the same instance).
+ */
+export function stableKey(creator: Pick<Creator, "platform" | "platform_id">): string {
+  return `${creator.platform}:${creator.platform_id}`;
+}
+
 export function formatRelativeToNow(iso?: string): string {
   if (!iso) return "";
   const target = new Date(iso).getTime();

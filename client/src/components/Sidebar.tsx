@@ -1,7 +1,8 @@
 import { useMemo, useRef, useState } from "react";
 import { useStore } from "../store.js";
 import CreatorRow from "./CreatorRow.js";
-import type { Creator, CreatorStatus, ExportFile } from "../types.js";
+import { stableKey } from "../utils.js";
+import type { Creator, CreatorStatus, ExportedCreator, ExportFile } from "../types.js";
 
 interface Props {
   onAddCreator: () => void;
@@ -50,8 +51,11 @@ export default function Sidebar({ onAddCreator, onClose }: Props) {
   const statuses = useStore((s) => s.statuses);
   const gridIds = useStore((s) => s.gridIds);
   const autoAddIds = useStore((s) => s.autoAddIds);
+  const creatorVolumes = useStore((s) => s.creatorVolumes);
   const toggleGrid = useStore((s) => s.toggleGrid);
   const toggleAutoAdd = useStore((s) => s.toggleAutoAdd);
+  const setAutoAdd = useStore((s) => s.setAutoAdd);
+  const setCreatorVolume = useStore((s) => s.setCreatorVolume);
   const removeCreators = useStore((s) => s.removeCreators);
   const importCreators = useStore((s) => s.importCreators);
 
@@ -95,13 +99,19 @@ export default function Sidebar({ onAddCreator, onClose }: Props) {
     const payload: ExportFile = {
       version: 1,
       exportedAt: new Date().toISOString(),
-      creators: creators.map((c) => ({
-        platform: c.platform,
-        platform_id: c.platform_id,
-        handle: c.handle,
-        display_name: c.display_name,
-        avatar_url: c.avatar_url,
-      })),
+      creators: creators.map((c): ExportedCreator => {
+        const key = stableKey(c);
+        const entry: ExportedCreator = {
+          platform: c.platform,
+          platform_id: c.platform_id,
+          handle: c.handle,
+          display_name: c.display_name,
+          avatar_url: c.avatar_url,
+        };
+        if (autoAddIds.includes(key)) entry.autoAdd = true;
+        if (key in creatorVolumes) entry.volume = creatorVolumes[key];
+        return entry;
+      }),
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -127,6 +137,22 @@ export default function Sidebar({ onAddCreator, onClose }: Props) {
         return;
       }
       const result = await importCreators(list);
+
+      // Re-apply any pin/volume settings carried in the file, matched by
+      // platform_id (not creator.id — import always mints a fresh one).
+      // Uses the just-refreshed store state directly rather than this
+      // component's `creators`, which is a stale snapshot from render time.
+      const freshCreators = useStore.getState().creators;
+      for (const entry of list) {
+        if (!entry || typeof entry !== "object") continue;
+        const creator = freshCreators.find(
+          (c) => c.platform === entry.platform && c.platform_id === entry.platform_id
+        );
+        if (!creator) continue;
+        if (entry.autoAdd) setAutoAdd(creator, true);
+        if (typeof entry.volume === "number") setCreatorVolume(creator, entry.volume);
+      }
+
       const parts = [`Imported ${result.imported}`];
       if (result.skipped) {
         parts.push(`skipped ${result.skipped} duplicate${result.skipped === 1 ? "" : "s"}`);
@@ -258,9 +284,9 @@ export default function Sidebar({ onAddCreator, onClose }: Props) {
                       creator={creator}
                       status={statuses[creator.id]}
                       inGrid={gridIds.includes(creator.id)}
-                      autoAdd={autoAddIds.includes(creator.id)}
+                      autoAdd={autoAddIds.includes(stableKey(creator))}
                       onToggleGrid={() => toggleGrid(creator.id)}
-                      onToggleAutoAdd={() => toggleAutoAdd(creator.id)}
+                      onToggleAutoAdd={() => toggleAutoAdd(creator)}
                       selecting={selecting}
                       selected={selectedIds.has(creator.id)}
                       onToggleSelect={() => toggleSelected(creator.id)}

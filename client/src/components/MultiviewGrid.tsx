@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { useStore } from "../store.js";
 import PlayerCell from "./PlayerCell.js";
-import { computeGridDims, effectiveVolume } from "../utils.js";
+import { computeGridDims, effectiveVolume, stableKey } from "../utils.js";
 
 export default function MultiviewGrid() {
   const creators = useStore((s) => s.creators);
@@ -46,7 +46,7 @@ export default function MultiviewGrid() {
           key={creator.id}
           creator={creator}
           status={statuses[creator.id]}
-          volume={effectiveVolume(masterVolume, creatorVolumes[creator.id])}
+          volume={effectiveVolume(masterVolume, creatorVolumes[stableKey(creator)])}
           onRemove={() => removeFromGrid(creator.id)}
         />
       ))}

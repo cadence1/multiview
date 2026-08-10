@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { useStore } from "../store.js";
 import type { Creator } from "../types.js";
-import { effectiveVolume } from "../utils.js";
+import { effectiveVolume, stableKey } from "../utils.js";
 
 interface Props {
   onClose: () => void;
@@ -57,7 +57,7 @@ export default function MediaPanel({ onClose }: Props) {
         ) : (
           <div className="space-y-3">
             {onScreen.map((creator) => {
-              const saved = creatorVolumes[creator.id] ?? 100;
+              const saved = creatorVolumes[stableKey(creator)] ?? 100;
               const eff = effectiveVolume(masterVolume, saved);
               return (
                 <div key={creator.id}>
@@ -83,7 +83,7 @@ export default function MediaPanel({ onClose }: Props) {
 
                   {creator.platform === "kick" ? (
                     <button
-                      onClick={() => setCreatorVolume(creator.id, saved > 0 ? 0 : 100)}
+                      onClick={() => setCreatorVolume(creator, saved > 0 ? 0 : 100)}
                       className={`w-full rounded-md px-2 py-1 text-[11px] font-medium ${
                         saved > 0
                           ? "bg-base-800 text-slate-300 hover:bg-base-700"
@@ -99,7 +99,7 @@ export default function MediaPanel({ onClose }: Props) {
                       min={0}
                       max={100}
                       value={saved}
-                      onChange={(e) => setCreatorVolume(creator.id, Number(e.target.value))}
+                      onChange={(e) => setCreatorVolume(creator, Number(e.target.value))}
                       className="w-full accent-indigo-500"
                     />
                   )}
