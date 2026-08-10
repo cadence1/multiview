@@ -9,18 +9,26 @@
 // is already mixed down by the time it reaches "tab" level, so this can't
 // give per-window boosting — only the shared Main dial).
 //
-// Chrome recognizes the specific pattern of capturing a tab's own audio and
-// reconnecting it to that same tab's audio output as in-page processing
-// (the same mechanism behind Chrome's own "tab audio booster"/"noise
-// suppression" demos) and suppresses the tab's normal output so this
-// doesn't double up into an echo — but that's Chrome's documented behavior,
-// not something verifiable by ear from here, so it's worth an actual listen
-// once you try it. Bail out immediately (Stop) if it does sound doubled.
+// Capturing a tab's audio does NOT, by itself, silence that tab's normal
+// output — confirmed the hard way: without any extra handling this played
+// the original AND the boosted copy at once (an echo). The fix is the
+// suppressLocalAudioPlayback audio constraint Chrome added specifically for
+// "capture this tab's own audio and re-render it yourself" use cases like
+// this one — it tells the browser not to also play the captured track
+// through the tab's normal output, leaving our boosted copy as the only
+// audible path. Not in TS's lib.dom.d.ts yet, hence the local interface.
 
 interface ChromiumDisplayMediaOptions extends DisplayMediaStreamOptions {
   /** Chromium-only extension (not in lib.dom.d.ts) — skips the generic
    *  "choose what to share" picker and defaults to the current tab. */
   preferCurrentTab?: boolean;
+}
+
+interface SuppressibleAudioConstraints extends MediaTrackConstraints {
+  /** Chromium-only (not in lib.dom.d.ts): don't also play this captured
+   *  track through the tab's normal output — required to avoid an echo
+   *  when the captured audio is being re-rendered by the same page. */
+  suppressLocalAudioPlayback?: boolean;
 }
 
 export interface TabAudioBoost {
@@ -35,7 +43,9 @@ export function isTabAudioBoostSupported(): boolean {
 export async function startTabAudioBoost(onStopped: () => void): Promise<TabAudioBoost> {
   const stream = await navigator.mediaDevices.getDisplayMedia({
     video: true, // required by the spec even though we only want the audio track
-    audio: true,
+    audio: {
+      suppressLocalAudioPlayback: true,
+    } as SuppressibleAudioConstraints,
     preferCurrentTab: true,
   } as ChromiumDisplayMediaOptions);
 
