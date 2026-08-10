@@ -44,8 +44,24 @@ export function offlineStatus(creatorId: string): CreatorStatus {
 }
 
 /**
- * A scheduled stream is only surfaced as "upcoming" if it starts within this
- * window; further out (or with no known start time) it's reported as
- * "offline" instead, until it gets closer.
+ * A scheduled stream is only surfaced as "upcoming" if its start time falls
+ * within this window around now; further out in the future (or with no
+ * known start time) it's reported as "offline" instead, until it gets
+ * closer.
  */
-export const UPCOMING_WINDOW_MS = 2 * 24 * 60 * 60 * 1000; // 2 days
+export const UPCOMING_WINDOW_MS = 2 * 24 * 60 * 60 * 1000; // 2 days ahead
+
+/**
+ * How far *past* its scheduled start a stream can be and still count as
+ * "upcoming" rather than "offline" — covers ordinary late starts (common,
+ * especially for VTuber premieres) without letting a schedule that's stale
+ * by days or months (the creator never started it, or never properly
+ * canceled it) sit in "Upcoming" forever.
+ */
+export const UPCOMING_PAST_GRACE_MS = 3 * 60 * 60 * 1000; // 3 hours late
+
+/** Whether a scheduled start time is close enough to now to count as "upcoming". */
+export function isWithinUpcomingWindow(startMs: number): boolean {
+  const deltaMs = startMs - Date.now();
+  return deltaMs >= -UPCOMING_PAST_GRACE_MS && deltaMs <= UPCOMING_WINDOW_MS;
+}

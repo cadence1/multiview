@@ -5,7 +5,7 @@ import type {
   PlatformAdapter,
   ResolvedChannel,
 } from "./types.js";
-import { offlineStatus, UPCOMING_WINDOW_MS } from "./types.js";
+import { offlineStatus, isWithinUpcomingWindow } from "./types.js";
 
 const HELIX = "https://api.twitch.tv/helix";
 
@@ -166,7 +166,7 @@ async function fetchUpcomingSegment(creator: CreatorRef): Promise<any | null> {
   if (!segment) return null;
   const startMs = new Date(segment.start_time).getTime();
   // Only surface segments starting within the window.
-  if (startMs - Date.now() > UPCOMING_WINDOW_MS) return null;
+  if (!isWithinUpcomingWindow(startMs)) return null;
   return segment;
 }
 
