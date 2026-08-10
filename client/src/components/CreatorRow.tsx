@@ -12,7 +12,10 @@ interface Props {
 
 export default function CreatorRow({ creator, status, inGrid, onToggleGrid, onRemove }: Props) {
   const state = status?.state ?? "offline";
-  const canAddToGrid = state === "live";
+  // Upcoming creators can be toggled into the grid too (as a placeholder
+  // that starts playing automatically once they go live) — PlayerCell only
+  // renders an actual embed once status flips to "live".
+  const canAddToGrid = state === "live" || state === "upcoming";
 
   return (
     <div
