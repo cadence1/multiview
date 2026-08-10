@@ -11,12 +11,15 @@
 //
 // Capturing a tab's audio does NOT, by itself, silence that tab's normal
 // output — confirmed the hard way: without any extra handling this played
-// the original AND the boosted copy at once (an echo). The fix is the
-// suppressLocalAudioPlayback audio constraint Chrome added specifically for
-// "capture this tab's own audio and re-render it yourself" use cases like
-// this one — it tells the browser not to also play the captured track
-// through the tab's normal output, leaving our boosted copy as the only
-// audible path. Not in TS's lib.dom.d.ts yet, hence the local interface.
+// the original AND the boosted copy at once (an echo). The
+// suppressLocalAudioPlayback audio constraint (Chrome-specific, not in TS's
+// lib.dom.d.ts) fixed that, confirmed by a real test — but routing the
+// result straight to audioContext.destination then produced total silence,
+// despite an AnalyserNode tap confirming the captured signal itself was
+// live and non-empty. Routing through a MediaStreamAudioDestinationNode
+// into a real <audio> element instead (rather than AudioContext.destination
+// directly) is what actually gets it audible — a different, independently-
+// established pattern for playing back processed captured audio.
 
 interface ChromiumDisplayMediaOptions extends DisplayMediaStreamOptions {
   /** Chromium-only extension (not in lib.dom.d.ts) — skips the generic
@@ -87,9 +90,26 @@ export async function startTabAudioBoost(onStopped: () => void): Promise<TabAudi
   analyser.fftSize = 256;
   const levelBuffer = new Uint8Array(analyser.frequencyBinCount);
 
+  // Routing straight to audioContext.destination produced total silence
+  // even with a confirmed-live captured signal (verified via the analyser
+  // tap above) — so instead route through a MediaStreamAudioDestinationNode
+  // and play *that* via a real <audio> element. This is a different,
+  // independently-established pattern for "process captured tab audio and
+  // play it back", not a variant of the destination-node approach that
+  // already failed.
+  const outputDestination = audioContext.createMediaStreamDestination();
+  const outputEl = document.createElement("audio");
+  outputEl.srcObject = outputDestination.stream;
+  outputEl.autoplay = true;
+  outputEl.muted = false;
+  // Needs to be in the DOM for playback to reliably start in some browsers.
+  outputEl.style.display = "none";
+  document.body.appendChild(outputEl);
+  outputEl.play().catch((err) => console.warn("[tabAudioBoost] outputEl.play() failed:", err));
+
   source.connect(gainNode);
   source.connect(analyser);
-  gainNode.connect(audioContext.destination);
+  gainNode.connect(outputDestination);
 
   console.info(
     "[tabAudioBoost] capture started",
@@ -102,6 +122,9 @@ export async function startTabAudioBoost(onStopped: () => void): Promise<TabAudi
     gainNode.disconnect();
     analyser.disconnect();
     source.disconnect();
+    outputEl.pause();
+    outputEl.srcObject = null;
+    outputEl.remove();
     audioContext.close().catch(() => {});
     stream.getTracks().forEach((t) => t.stop());
   }
