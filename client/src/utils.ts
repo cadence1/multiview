@@ -1,4 +1,4 @@
-import type { Creator, Platform } from "./types.js";
+import type { Creator, CreatorStatus, Platform } from "./types.js";
 
 export const PLATFORM_LABEL: Record<Platform, string> = {
   youtube: "YouTube",
@@ -62,6 +62,31 @@ export function embedUrlFor(
       )}&parent=${encodeURIComponent(twitchParent)}&muted=true&autoplay=true`;
     case "kick":
       return `https://player.kick.com/${encodeURIComponent(embedId)}?muted=true&autoplay=true`;
+  }
+}
+
+/**
+ * Embeddable live-chat URL for a creator, or null if chat isn't available
+ * right now. Twitch chat works regardless of live status (it's the room,
+ * not the stream). YouTube chat only exists for the specific live video, so
+ * it needs a live embedId. Kick has no stable public embeddable chat widget.
+ */
+export function chatUrlFor(
+  creator: Creator,
+  status: CreatorStatus | undefined,
+  hostname: string
+): string | null {
+  switch (creator.platform) {
+    case "twitch":
+      return `https://www.twitch.tv/embed/${encodeURIComponent(
+        creator.handle
+      )}/chat?parent=${encodeURIComponent(hostname)}&darkpopout`;
+    case "youtube":
+      return status?.state === "live" && status.embedId
+        ? `https://www.youtube.com/live_chat?v=${status.embedId}&embed_domain=${hostname}`
+        : null;
+    case "kick":
+      return null;
   }
 }
 

@@ -61,6 +61,13 @@ always show as offline.
 5. Click the 📌 on a creator row to **pin** them — they'll open in the grid
    automatically whenever they go live, and close automatically once they
    end. Pinning a creator who's already live opens it right away.
+6. Click **Chat** (top right) to dock a chat panel — it lists whichever
+   creators are currently in your grid as tabs, and shows the live chat for
+   whichever one you pick. Twitch chat works regardless of live status;
+   YouTube chat only exists once the video is live (and only if the
+   broadcaster has chat enabled); Kick has no embeddable chat, so it links
+   out to kick.com instead.
+7. Click the **Multiview** title to open the same page in a new window.
 
 Which creators you *track* is stored server-side (SQLite), so it's shared
 across any device that opens the app. Which ones are currently *in the grid*

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useStore } from "./store.js";
 import Sidebar from "./components/Sidebar.js";
+import ChatPanel from "./components/ChatPanel.js";
 import MultiviewGrid from "./components/MultiviewGrid.js";
 import AddCreatorDialog from "./components/AddCreatorDialog.js";
 
@@ -11,6 +12,7 @@ export default function App() {
   const refreshStatuses = useStore((s) => s.refreshStatuses);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [chatOpen, setChatOpen] = useState(false);
 
   useEffect(() => {
     refreshCreators().catch(() => {});
@@ -30,23 +32,42 @@ export default function App() {
         />
       )}
       <main className="flex-1 min-w-0 flex flex-col">
-        <header className="flex items-center gap-3 border-b border-base-700 px-4 py-2">
-          {!sidebarOpen && (
-            <button
-              onClick={() => setSidebarOpen(true)}
-              className="rounded-md border border-base-600 px-2 py-1 text-sm text-slate-300 hover:bg-base-800"
-            >
-              Creators
-            </button>
-          )}
-          <h1 className="text-sm font-semibold tracking-wide text-slate-300">
+        <header className="grid grid-cols-3 items-center border-b border-base-700 px-4 py-2">
+          <div className="flex items-center gap-2">
+            {!sidebarOpen && (
+              <button
+                onClick={() => setSidebarOpen(true)}
+                className="rounded-md border border-base-600 px-2 py-1 text-sm text-slate-300 hover:bg-base-800"
+              >
+                Creators
+              </button>
+            )}
+          </div>
+
+          <button
+            onClick={() => window.open(window.location.href, "_blank", "noopener,noreferrer")}
+            className="justify-self-center text-sm font-semibold tracking-wide text-slate-300 hover:text-slate-100"
+            title="Open Multiview in a new window"
+          >
             Multiview
-          </h1>
+          </button>
+
+          <div className="flex items-center justify-end gap-2">
+            {!chatOpen && (
+              <button
+                onClick={() => setChatOpen(true)}
+                className="rounded-md border border-base-600 px-2 py-1 text-sm text-slate-300 hover:bg-base-800"
+              >
+                Chat
+              </button>
+            )}
+          </div>
         </header>
         <div className="flex-1 min-h-0">
           <MultiviewGrid />
         </div>
       </main>
+      {chatOpen && <ChatPanel onClose={() => setChatOpen(false)} />}
       {dialogOpen && <AddCreatorDialog onClose={() => setDialogOpen(false)} />}
     </div>
   );
