@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { Creator, CreatorStatus } from "../types.js";
-import { formatRelativeToNow, homeUrlFor } from "../utils.js";
+import { formatElapsed, formatRelativeToNow, homeUrlFor } from "../utils.js";
 import PlatformBadge from "./PlatformBadge.js";
+import UpcomingPreview from "./UpcomingPreview.js";
 
 interface Props {
   creator: Creator;
@@ -33,6 +34,10 @@ export default function CreatorRow({
   // renders an actual embed once status flips to "live".
   const canAddToGrid = state === "live" || state === "upcoming";
 
+  const rowRef = useRef<HTMLDivElement>(null);
+  const [hovering, setHovering] = useState(false);
+  const showPreview = hovering && state === "upcoming";
+
   function handleClick() {
     if (canAddToGrid) {
       onToggleGrid();
@@ -44,11 +49,16 @@ export default function CreatorRow({
 
   return (
     <div
+      ref={rowRef}
       className={`group flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 transition-colors ${
         inGrid ? "bg-indigo-500/20 ring-1 ring-indigo-400/40" : "hover:bg-base-800"
       }`}
       onClick={handleClick}
-      onMouseLeave={() => setConfirmingRemove(false)}
+      onMouseEnter={() => setHovering(true)}
+      onMouseLeave={() => {
+        setConfirmingRemove(false);
+        setHovering(false);
+      }}
       title={canAddToGrid ? "Toggle in multiview" : "Open channel page"}
     >
       <div className="relative shrink-0">
@@ -74,12 +84,21 @@ export default function CreatorRow({
           <PlatformBadge platform={creator.platform} />
         </div>
         <div className="truncate text-xs text-slate-400">
-          {state === "live" && (status?.title || "Live now")}
-          {state === "upcoming" &&
-            `Upcoming ${status?.startTime ? formatRelativeToNow(status.startTime) : ""}`}
+          {state === "live" &&
+            (status?.startTime ? `Live for ${formatElapsed(status.startTime)}` : status?.title || "Live now")}
+          {state === "upcoming" && (
+            <>
+              {status?.title || "Upcoming"}
+              {status?.startTime && ` · ${formatRelativeToNow(status.startTime).replace(/^in /, "")}`}
+            </>
+          )}
           {state === "offline" && "Offline"}
         </div>
       </div>
+
+      {showPreview && rowRef.current && (
+        <UpcomingPreview creator={creator} status={status} anchorRect={rowRef.current.getBoundingClientRect()} />
+      )}
 
       <button
         onClick={(e) => {

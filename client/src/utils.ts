@@ -30,6 +30,17 @@ export function formatRelativeToNow(iso?: string): string {
   return diffMs >= 0 ? `in ${days}d` : `${days}d ago`;
 }
 
+/** How long a live stream has been running, e.g. "1h 23m" or "45m". */
+export function formatElapsed(iso?: string): string {
+  if (!iso) return "";
+  const ms = Date.now() - new Date(iso).getTime();
+  if (ms < 60_000) return "just started";
+  const totalMinutes = Math.floor(ms / 60_000);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
+}
+
 export function computeGridDims(n: number): { cols: number; rows: number } {
   if (n <= 0) return { cols: 1, rows: 1 };
   const cols = Math.ceil(Math.sqrt(n));
