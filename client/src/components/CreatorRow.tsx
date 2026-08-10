@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { Creator, CreatorStatus } from "../types.js";
 import { formatRelativeToNow, homeUrlFor } from "../utils.js";
 import PlatformBadge from "./PlatformBadge.js";
@@ -12,6 +13,11 @@ interface Props {
 
 export default function CreatorRow({ creator, status, inGrid, onToggleGrid, onRemove }: Props) {
   const state = status?.state ?? "offline";
+  // Untracking is destructive (deletes the creator server-side), so the
+  // actual ✕ only appears after this toggle is clicked — a stray hover-click
+  // can't remove a creator by accident. Resets on mouse-leave so it doesn't
+  // stay armed.
+  const [confirmingRemove, setConfirmingRemove] = useState(false);
   // Upcoming creators can be toggled into the grid too (as a placeholder
   // that starts playing automatically once they go live) — PlayerCell only
   // renders an actual embed once status flips to "live".
@@ -32,6 +38,7 @@ export default function CreatorRow({ creator, status, inGrid, onToggleGrid, onRe
         inGrid ? "bg-indigo-500/20 ring-1 ring-indigo-400/40" : "hover:bg-base-800"
       }`}
       onClick={handleClick}
+      onMouseLeave={() => setConfirmingRemove(false)}
       title={canAddToGrid ? "Toggle in multiview" : "Open channel page"}
     >
       <div className="relative shrink-0">
@@ -64,16 +71,29 @@ export default function CreatorRow({ creator, status, inGrid, onToggleGrid, onRe
         </div>
       </div>
 
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          onRemove();
-        }}
-        className="shrink-0 rounded px-1.5 py-0.5 text-xs text-slate-500 opacity-0 hover:bg-base-700 hover:text-slate-200 group-hover:opacity-100"
-        title="Stop tracking"
-      >
-        ✕
-      </button>
+      {confirmingRemove ? (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onRemove();
+          }}
+          className="shrink-0 rounded bg-red-500/20 px-1.5 py-0.5 text-xs font-medium text-red-300 hover:bg-red-500/40 hover:text-red-100"
+          title="Confirm: stop tracking"
+        >
+          ✕
+        </button>
+      ) : (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            setConfirmingRemove(true);
+          }}
+          className="shrink-0 rounded px-1.5 py-0.5 text-xs text-slate-500 opacity-0 hover:bg-base-700 hover:text-slate-200 group-hover:opacity-100"
+          title="Stop tracking"
+        >
+          🗑
+        </button>
+      )}
     </div>
   );
 }
