@@ -120,6 +120,18 @@ export default function PlayerCell({ creator, status, volume, onRemove }: Props)
           allowFullScreen
         />
       )}
+      {isLive && creator.platform === "rplay" && (
+        // No dedicated minimal player (see embedUrlFor) and no remote
+        // volume control — this is the site's own full page, muted by
+        // default; the user can click its own speaker icon to unmute.
+        <iframe
+          key={`rplay:${status!.embedId}`}
+          src={embedUrlFor("rplay", status!.embedId!, twitchParent)}
+          className="h-full w-full border-0"
+          allow="autoplay; encrypted-media; picture-in-picture"
+          allowFullScreen
+        />
+      )}
       {!isLive && (
         <div className="flex h-full w-full flex-col items-center justify-center gap-1 text-slate-500">
           {creator.avatar_url && (

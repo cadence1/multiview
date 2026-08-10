@@ -1,4 +1,4 @@
-export type Platform = "youtube" | "twitch" | "kick";
+export type Platform = "youtube" | "twitch" | "kick" | "rplay";
 export type StreamState = "live" | "upcoming" | "offline";
 
 export interface Creator {

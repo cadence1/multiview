@@ -93,6 +93,13 @@ export default function MediaPanel({ onClose }: Props) {
                     >
                       {saved > 0 ? "Unmuted" : "Muted"} (Kick: mute only)
                     </button>
+                  ) : creator.platform === "rplay" ? (
+                    <p
+                      className="rounded-md bg-base-800 px-2 py-1 text-[11px] text-slate-500"
+                      title="RPlay's embed is its own full page, with no remote volume control we can command from here"
+                    >
+                      Click the speaker icon in its cell to unmute
+                    </p>
                   ) : (
                     <input
                       type="range"

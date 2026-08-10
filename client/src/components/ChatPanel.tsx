@@ -96,6 +96,8 @@ export default function ChatPanel({ onClose }: Props) {
               <div className="flex h-full flex-col items-center justify-center gap-2 p-4 text-center text-xs text-slate-500">
                 {selected.platform === "kick" ? (
                   <p>Kick has no embeddable chat widget.</p>
+                ) : selected.platform === "rplay" ? (
+                  <p>RPlay's chat is already shown inside its grid cell.</p>
                 ) : (
                   <p>{selected.display_name}'s chat needs them to be live.</p>
                 )}

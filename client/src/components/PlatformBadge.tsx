@@ -8,7 +8,13 @@ export default function PlatformBadge({ platform }: { platform: Platform }) {
       style={{ backgroundColor: PLATFORM_COLOR[platform] }}
       title={PLATFORM_LABEL[platform]}
     >
-      {platform === "youtube" ? "YT" : platform === "twitch" ? "TW" : "KI"}
+      {platform === "youtube"
+        ? "YT"
+        : platform === "twitch"
+          ? "TW"
+          : platform === "kick"
+            ? "KI"
+            : "RP"}
     </span>
   );
 }

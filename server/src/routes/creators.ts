@@ -6,7 +6,7 @@ import { adapters } from "../platforms/index.js";
 import type { Platform } from "../platforms/types.js";
 import { pollPlatformNow } from "../poller.js";
 
-const PLATFORMS: Platform[] = ["youtube", "twitch", "kick"];
+const PLATFORMS: Platform[] = ["youtube", "twitch", "kick", "rplay"];
 
 export const creatorsRouter = Router();
 

@@ -6,6 +6,7 @@ const PLATFORMS: { value: Platform; label: string; hint: string }[] = [
   { value: "youtube", label: "YouTube", hint: "@handle, channel/video URL, or channel ID" },
   { value: "twitch", label: "Twitch", hint: "channel login, or channel/VOD/clip URL" },
   { value: "kick", label: "Kick", hint: "channel slug or kick.com URL" },
+  { value: "rplay", label: "RPlay", hint: "rplay.live profile URL, or the creator id" },
 ];
 
 export default function AddCreatorDialog({ onClose }: { onClose: () => void }) {

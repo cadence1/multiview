@@ -4,12 +4,14 @@ export const PLATFORM_LABEL: Record<Platform, string> = {
   youtube: "YouTube",
   twitch: "Twitch",
   kick: "Kick",
+  rplay: "RPlay",
 };
 
 export const PLATFORM_COLOR: Record<Platform, string> = {
   youtube: "#ff0000",
   twitch: "#9146ff",
   kick: "#53fc18",
+  rplay: "#ff5fa2",
 };
 
 /**
@@ -87,6 +89,12 @@ export function embedUrlFor(
       )}&parent=${encodeURIComponent(twitchParent)}&muted=true&autoplay=true`;
     case "kick":
       return `https://player.kick.com/${encodeURIComponent(embedId)}?muted=${kickMuted}&autoplay=true`;
+    case "rplay":
+      // RPlay has no dedicated embeddable player — this is the full page
+      // (nav, chat, login banner and all), not a clean minimal embed like
+      // the other three platforms get. Its video does autoplay muted
+      // without login, so it still works, just with extra chrome.
+      return `https://rplay.live/live/${encodeURIComponent(embedId)}`;
   }
 }
 
@@ -118,6 +126,11 @@ export function chatUrlFor(
         : null;
     case "kick":
       return null;
+    case "rplay":
+      // Its embed (see embedUrlFor) is the full rplay.live page, which
+      // already includes chat inline — a separate chat panel would just be
+      // a duplicate iframe of the same thing.
+      return null;
   }
 }
 
@@ -135,5 +148,7 @@ export function homeUrlFor(creator: Creator): string {
       return `https://www.twitch.tv/${creator.handle}`;
     case "kick":
       return `https://kick.com/${creator.handle}`;
+    case "rplay":
+      return `https://rplay.live/creatorhome/${creator.platform_id}`;
   }
 }
