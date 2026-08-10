@@ -24,11 +24,6 @@ WORKDIR /app/server
 ENV NODE_ENV=production
 ENV DATA_DIR=/app/server/data
 
-# curl is required as a fallback for Kick's channel API: Kick's Cloudflare
-# WAF blocks Node's own fetch client by TLS fingerprint regardless of
-# headers, but not curl. See server/src/platforms/kick.ts.
-RUN apk add --no-cache curl
-
 COPY --from=build /app/server/package.json ./package.json
 RUN npm install --omit=dev
 

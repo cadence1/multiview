@@ -34,18 +34,17 @@ in SQLite under `./data`, which is bind-mounted so they survive rebuilds.
 ## Configuring platform access
 
 Nothing is *required* to get started — YouTube live/upcoming detection works
-out of the box (it reads the same public page your browser would), and Kick
-needs no credentials. But a couple of optional/required keys make things more
-reliable:
+out of the box (it reads the same public page your browser would). But a
+couple of optional/required keys make things more reliable:
 
 | Env var | Platform | Required? | How to get it |
 |---|---|---|---|
 | `YOUTUBE_API_KEY` | YouTube | Optional | [Google Cloud Console](https://console.cloud.google.com/) → enable "YouTube Data API v3" → create an API key. Improves channel lookup when adding a creator; live-status polling never uses API quota. |
 | `TWITCH_CLIENT_ID` / `TWITCH_CLIENT_SECRET` | Twitch | **Required for Twitch** | Free app at [dev.twitch.tv/console/apps](https://dev.twitch.tv/console/apps). Any redirect URL works (e.g. `http://localhost`) — it's not used, only the client credentials flow is. |
-| — | Kick | n/a | Uses Kick's public (unofficial) channel API. No signup, but Kick can change or rate-limit this without notice — treat Kick support as best-effort. |
+| `KICK_CLIENT_ID` / `KICK_CLIENT_SECRET` | Kick | **Required for Kick** | Free app at [kick.com/settings/developer](https://kick.com/settings/developer), with the `channel:read` and `user:read` scopes. Any redirect URL works, same as Twitch — only the client credentials flow is used. |
 
-Without Twitch credentials, Twitch creators can still be tracked but will
-always show as offline.
+Without Twitch/Kick credentials, creators on that platform can still be
+tracked but will always show as offline.
 
 ## Using it
 
@@ -99,13 +98,8 @@ actual platform ID, not that internal one.
   page rather than the paid-quota Data API search endpoint — this is the same
   approach most self-hosted Holodex-alikes use. It's reasonably reliable but
   can break if YouTube changes its page structure.
-- **Kick** has no official public API; the unofficial endpoint used here can
-  change without notice. Kick's Cloudflare protection also blocks Node's own
-  `fetch` client by TLS fingerprint (confirmed: identical requests succeed via
-  `curl` and fail via Node's fetch, regardless of headers) — the adapter
-  automatically falls back to shelling out to `curl` when that happens, so
-  **`curl` must be on `PATH`** (already installed in the Docker image; ships
-  by default on Windows 10+/most Linux/macOS).
+- **Kick** uses Kick's official public API (`api.kick.com`), same
+  client-credentials OAuth pattern as Twitch — see the table above.
 - **No chat panel, no drag-to-resize grid** in this version — the grid
   auto-arranges by count. Both would be reasonable follow-ups.
 
