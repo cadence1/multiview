@@ -83,7 +83,7 @@ export function chatUrlFor(
       )}/chat?parent=${encodeURIComponent(hostname)}&darkpopout`;
     case "youtube":
       return status?.state === "live" && status.embedId
-        ? `https://www.youtube.com/live_chat?v=${status.embedId}&embed_domain=${hostname}`
+        ? `https://www.youtube.com/live_chat?v=${status.embedId}&embed_domain=${hostname}&dark_theme=1`
         : null;
     case "kick":
       return null;
