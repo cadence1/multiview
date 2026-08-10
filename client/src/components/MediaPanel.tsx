@@ -26,6 +26,7 @@ export default function MediaPanel({ onClose }: Props) {
   const boostRef = useRef<TabAudioBoost | null>(null);
   const [boostState, setBoostState] = useState<BoostState>("idle");
   const [boostError, setBoostError] = useState<string | null>(null);
+  const [capturedLevel, setCapturedLevel] = useState(0);
   const boostSupported = useMemo(() => isTabAudioBoostSupported(), []);
 
   // Boost requires a fresh permission grant every page load — it can't
@@ -54,6 +55,20 @@ export default function MediaPanel({ onClose }: Props) {
       boostRef.current.setGain(boostGainFor(masterVolume));
     }
   }, [masterVolume, boostState]);
+
+  // Poll the captured (pre-gain) signal level while boosting — diagnostic
+  // readout so a silent result is visibly distinguishable from "capture has
+  // real signal but it's not reaching speakers", instead of just "no sound".
+  useEffect(() => {
+    if (boostState !== "active") {
+      setCapturedLevel(0);
+      return;
+    }
+    const id = setInterval(() => {
+      setCapturedLevel(boostRef.current?.getLevel() ?? 0);
+    }, 150);
+    return () => clearInterval(id);
+  }, [boostState]);
 
   async function handleEnableBoost() {
     setBoostState("starting");
@@ -123,6 +138,20 @@ export default function MediaPanel({ onClose }: Props) {
               <p className="text-[10px] text-amber-400">
                 🔊 Boost active — this tab's audio is being captured to allow past 100%.
               </p>
+              <div>
+                <div className="flex items-center justify-between text-[10px] text-slate-500">
+                  <span>Captured signal (diagnostic)</span>
+                  <span className={capturedLevel > 0.02 ? "text-emerald-400" : "text-slate-500"}>
+                    {capturedLevel > 0.02 ? "has audio" : "silent"}
+                  </span>
+                </div>
+                <div className="mt-0.5 h-1.5 w-full overflow-hidden rounded-full bg-base-800">
+                  <div
+                    className="h-full bg-emerald-500 transition-[width]"
+                    style={{ width: `${Math.min(100, capturedLevel * 400)}%` }}
+                  />
+                </div>
+              </div>
               <button
                 onClick={handleStopBoost}
                 className="w-full rounded-md bg-base-800 px-2 py-1 text-[11px] font-medium text-slate-300 hover:bg-base-700"

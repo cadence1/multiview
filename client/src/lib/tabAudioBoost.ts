@@ -34,6 +34,15 @@ interface SuppressibleAudioConstraints extends MediaTrackConstraints {
 export interface TabAudioBoost {
   setGain: (multiplier: number) => void;
   stop: () => void;
+  /**
+   * Instantaneous 0-1 signal level of the CAPTURED stream, sampled before
+   * the gain stage — diagnostic only, not used for playback. Two silence
+   * "fixes" in a row didn't hold up under real testing, and this can't be
+   * verified by ear from this environment — this exists so the next test
+   * gives real data (is the capture itself silent, or is our routing after
+   * it broken?) instead of another guess.
+   */
+  getLevel: () => number;
 }
 
 export function isTabAudioBoostSupported(): boolean {
@@ -70,11 +79,28 @@ export async function startTabAudioBoost(onStopped: () => void): Promise<TabAudi
   const source = audioContext.createMediaStreamSource(stream);
   const gainNode = audioContext.createGain();
   gainNode.gain.value = 1;
+
+  // Tapped off the source directly (pre-gain), so its reading reflects the
+  // captured signal itself regardless of whatever the gain is currently set
+  // to — see getLevel() above.
+  const analyser = audioContext.createAnalyser();
+  analyser.fftSize = 256;
+  const levelBuffer = new Uint8Array(analyser.frequencyBinCount);
+
   source.connect(gainNode);
+  source.connect(analyser);
   gainNode.connect(audioContext.destination);
+
+  console.info(
+    "[tabAudioBoost] capture started",
+    JSON.stringify(audioTrack.getSettings()),
+    "audioContext.state =",
+    audioContext.state
+  );
 
   function stop() {
     gainNode.disconnect();
+    analyser.disconnect();
     source.disconnect();
     audioContext.close().catch(() => {});
     stream.getTracks().forEach((t) => t.stop());
@@ -92,5 +118,14 @@ export async function startTabAudioBoost(onStopped: () => void): Promise<TabAudi
       gainNode.gain.value = multiplier;
     },
     stop,
+    getLevel: () => {
+      analyser.getByteTimeDomainData(levelBuffer);
+      let sumSquares = 0;
+      for (const v of levelBuffer) {
+        const normalized = (v - 128) / 128;
+        sumSquares += normalized * normalized;
+      }
+      return Math.sqrt(sumSquares / levelBuffer.length);
+    },
   };
 }
