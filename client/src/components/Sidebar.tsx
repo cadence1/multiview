@@ -1,15 +1,48 @@
 import { useMemo } from "react";
 import { useStore } from "../store.js";
 import CreatorRow from "./CreatorRow.js";
-import type { Creator, StreamState } from "../types.js";
+import type { Creator, CreatorStatus } from "../types.js";
 
 interface Props {
   onAddCreator: () => void;
   onClose: () => void;
 }
 
-function groupOrder(state: StreamState): number {
-  return state === "live" ? 0 : state === "upcoming" ? 1 : 2;
+function byName(a: Creator, b: Creator): number {
+  return a.display_name.localeCompare(b.display_name);
+}
+
+function startTimeMs(creator: Creator, statuses: Record<string, CreatorStatus>): number | null {
+  const startTime = statuses[creator.id]?.startTime;
+  return startTime ? new Date(startTime).getTime() : null;
+}
+
+/** Newest-live-first: largest (most recent) start time first, unknowns last. */
+function byMostRecentlyLive(
+  statuses: Record<string, CreatorStatus>
+): (a: Creator, b: Creator) => number {
+  return (a, b) => {
+    const ta = startTimeMs(a, statuses);
+    const tb = startTimeMs(b, statuses);
+    if (ta === null && tb === null) return byName(a, b);
+    if (ta === null) return 1;
+    if (tb === null) return -1;
+    return tb - ta || byName(a, b);
+  };
+}
+
+/** Soonest-first: smallest (nearest) start time first, unknowns last. */
+function bySoonestUpcoming(
+  statuses: Record<string, CreatorStatus>
+): (a: Creator, b: Creator) => number {
+  return (a, b) => {
+    const ta = startTimeMs(a, statuses);
+    const tb = startTimeMs(b, statuses);
+    if (ta === null && tb === null) return byName(a, b);
+    if (ta === null) return 1;
+    if (tb === null) return -1;
+    return ta - tb || byName(a, b);
+  };
 }
 
 export default function Sidebar({ onAddCreator, onClose }: Props) {
@@ -19,21 +52,23 @@ export default function Sidebar({ onAddCreator, onClose }: Props) {
   const toggleGrid = useStore((s) => s.toggleGrid);
   const removeCreator = useStore((s) => s.removeCreator);
 
-  const sorted = useMemo(() => {
-    return [...creators].sort((a, b) => {
-      const sa = statuses[a.id]?.state ?? "offline";
-      const sb = statuses[b.id]?.state ?? "offline";
-      const diff = groupOrder(sa) - groupOrder(sb);
-      if (diff !== 0) return diff;
-      return a.display_name.localeCompare(b.display_name);
-    });
+  const groups: { label: string; items: Creator[] }[] = useMemo(() => {
+    const stateOf = (c: Creator) => statuses[c.id]?.state ?? "offline";
+    return [
+      {
+        label: "Live",
+        items: creators.filter((c) => stateOf(c) === "live").sort(byMostRecentlyLive(statuses)),
+      },
+      {
+        label: "Upcoming",
+        items: creators.filter((c) => stateOf(c) === "upcoming").sort(bySoonestUpcoming(statuses)),
+      },
+      {
+        label: "Offline",
+        items: creators.filter((c) => stateOf(c) === "offline").sort(byName),
+      },
+    ];
   }, [creators, statuses]);
-
-  const groups: { label: string; items: Creator[] }[] = [
-    { label: "Live", items: sorted.filter((c) => (statuses[c.id]?.state ?? "offline") === "live") },
-    { label: "Upcoming", items: sorted.filter((c) => (statuses[c.id]?.state ?? "offline") === "upcoming") },
-    { label: "Offline", items: sorted.filter((c) => (statuses[c.id]?.state ?? "offline") === "offline") },
-  ];
 
   return (
     <aside className="flex h-full w-72 shrink-0 flex-col border-r border-base-700 bg-base-900">
