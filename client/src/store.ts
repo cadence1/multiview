@@ -29,19 +29,11 @@ function clampVolume(v: number): number {
   return Math.min(100, Math.max(0, Math.round(v)));
 }
 
-// Master alone can go up to 200 (boost) — everything else (per-creator
-// volume, and master's own effect on individual players) stays 0-100; see
-// effectiveVolume()/boostGainFor() in utils.ts.
-const MAX_MASTER_VOLUME = 200;
-function clampMasterVolume(v: number): number {
-  return Math.min(MAX_MASTER_VOLUME, Math.max(0, Math.round(v)));
-}
-
 function loadMasterVolume(): number {
   try {
     const raw = localStorage.getItem(MASTER_VOLUME_KEY);
     const n = raw ? Number(raw) : 100;
-    return Number.isFinite(n) ? clampMasterVolume(n) : 100;
+    return Number.isFinite(n) ? clampVolume(n) : 100;
   } catch {
     return 100;
   }
@@ -261,7 +253,7 @@ export const useStore = create<MultiviewState>((set, get) => ({
   },
 
   setMasterVolume: (v) => {
-    const clamped = clampMasterVolume(v);
+    const clamped = clampVolume(v);
     try {
       localStorage.setItem(MASTER_VOLUME_KEY, String(clamped));
     } catch {

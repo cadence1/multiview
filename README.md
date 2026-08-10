@@ -72,13 +72,9 @@ always show as offline.
    slider scales every window at once, and each on-screen creator gets their
    own slider underneath (saved per-creator, so it's remembered next time
    they're added). YouTube and Twitch get real live volume control via their
-   official player APIs; Kick has no such API, so it's mute/unmute only.
-   YouTube/Twitch's own players cap at 100% — click **Enable boost** to push
-   Main up to 200% by capturing the tab's own audio (one-time "share this
-   tab" permission) and amplifying it with the Web Audio API. Chrome/Edge
-   only; per-creator sliders stay capped at 100% either way, since boosting
-   an individual cross-origin stream in isolation isn't possible — only the
-   combined tab output can be boosted.
+   official player APIs, capped at 100% (that's the platforms' own limit,
+   not something we can push past from a regular web page); Kick has no
+   such API, so it's mute/unmute only.
 
 Which creators you *track* is stored server-side (SQLite), so it's shared
 across any device that opens the app. Which ones are currently *in the grid*,

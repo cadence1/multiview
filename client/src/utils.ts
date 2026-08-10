@@ -90,24 +90,10 @@ export function embedUrlFor(
   }
 }
 
-/**
- * Master volume scaled by a creator's own saved volume (0-100), clamped
- * 0-100 for feeding into an individual player's own setVolume — every
- * platform API caps there regardless of what we pass. Master can go above
- * 100 (boost), but that portion is never sent to individual players; it's
- * applied separately as a shared gain on the tab's whole mixed output (see
- * lib/tabAudioBoost.ts) since boosting a single cross-origin iframe in
- * isolation isn't possible.
- */
+/** Master volume (0-100) scaled by a creator's own saved volume (0-100), clamped 0-100. */
 export function effectiveVolume(masterVolume: number, creatorVolume: number | undefined): number {
   const cv = creatorVolume ?? 100;
-  const cappedMaster = Math.min(100, masterVolume);
-  return Math.min(100, Math.max(0, Math.round((cappedMaster / 100) * cv)));
-}
-
-/** The tab-wide boost gain multiplier for a given master volume (1.0 at/below 100, up to 2.0 at 200). */
-export function boostGainFor(masterVolume: number): number {
-  return masterVolume > 100 ? masterVolume / 100 : 1;
+  return Math.min(100, Math.max(0, Math.round((masterVolume / 100) * cv)));
 }
 
 /**
