@@ -115,6 +115,7 @@ function decodeHtml(s: string): string {
 
 type ParsedQuery =
   | { kind: "channelId"; value: string }
+  | { kind: "videoId"; value: string }
   | { kind: "path"; value: string }; // path to fetch directly, e.g. "@handle" or "c/Name"
 
 function parseQuery(raw: string): ParsedQuery {
@@ -122,9 +123,26 @@ function parseQuery(raw: string): ParsedQuery {
   if (/^UC[\w-]{22}$/.test(q)) return { kind: "channelId", value: q };
 
   try {
-    if (q.includes("youtube.com")) {
-      const url = new URL(q.startsWith("http") ? q : `https://${q}`);
+    const url = new URL(q.includes("://") ? q : `https://${q}`);
+    const host = url.hostname.replace(/^www\.|^m\./, "");
+
+    if (host === "youtu.be") {
+      const videoId = url.pathname.split("/").filter(Boolean)[0];
+      if (videoId) return { kind: "videoId", value: videoId };
+    }
+
+    if (host === "youtube.com") {
       const parts = url.pathname.split("/").filter(Boolean);
+
+      if (parts[0] === "watch") {
+        const v = url.searchParams.get("v");
+        if (v) return { kind: "videoId", value: v };
+      }
+      // /shorts/{id} and a bare /live/{id} share-link (distinct from
+      // /channel/{id}/live, handled below).
+      if ((parts[0] === "shorts" || parts[0] === "live") && parts[1]) {
+        return { kind: "videoId", value: parts[1] };
+      }
       if (parts[0] === "channel" && parts[1]) {
         return { kind: "channelId", value: parts[1] };
       }
@@ -160,21 +178,40 @@ async function resolveViaApiKey(handlePath: string): Promise<ResolvedChannel | n
   };
 }
 
+async function resolveChannelById(channelId: string): Promise<ResolvedChannel | null> {
+  const html = await fetchText(`https://www.youtube.com/channel/${channelId}`);
+  if (!html) return null;
+  const meta = extractChannelMeta(html);
+  if (!meta) return null;
+  return {
+    platform: "youtube",
+    platformId: meta.channelId,
+    handle: meta.channelId,
+    displayName: meta.displayName,
+    avatarUrl: meta.avatarUrl,
+  };
+}
+
+/** Given a video ID, find the channel ID that owns it via the video's own player response. */
+async function resolveChannelIdFromVideo(videoId: string): Promise<string | null> {
+  const html = await fetchText(`https://www.youtube.com/watch?v=${videoId}`);
+  if (!html) return null;
+  const playerResponse = extractJsonAfter(html, "ytInitialPlayerResponse");
+  const channelId = playerResponse?.videoDetails?.channelId;
+  return typeof channelId === "string" && /^UC[\w-]{22}$/.test(channelId) ? channelId : null;
+}
+
 async function resolveChannel(query: string): Promise<ResolvedChannel | null> {
   const parsed = parseQuery(query);
 
   if (parsed.kind === "channelId") {
-    const html = await fetchText(`https://www.youtube.com/channel/${parsed.value}`);
-    if (!html) return null;
-    const meta = extractChannelMeta(html);
-    if (!meta) return null;
-    return {
-      platform: "youtube",
-      platformId: meta.channelId,
-      handle: meta.channelId,
-      displayName: meta.displayName,
-      avatarUrl: meta.avatarUrl,
-    };
+    return resolveChannelById(parsed.value);
+  }
+
+  if (parsed.kind === "videoId") {
+    const channelId = await resolveChannelIdFromVideo(parsed.value);
+    if (!channelId) return null;
+    return resolveChannelById(channelId);
   }
 
   // parsed.kind === "path" — a handle (e.g. "@MrBeast") or custom path (e.g. "c/Name").

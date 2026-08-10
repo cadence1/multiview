@@ -3,8 +3,8 @@ import { useStore } from "../store.js";
 import type { Platform } from "../types.js";
 
 const PLATFORMS: { value: Platform; label: string; hint: string }[] = [
-  { value: "youtube", label: "YouTube", hint: "@handle, channel URL, or channel ID" },
-  { value: "twitch", label: "Twitch", hint: "channel login or twitch.tv URL" },
+  { value: "youtube", label: "YouTube", hint: "@handle, channel/video URL, or channel ID" },
+  { value: "twitch", label: "Twitch", hint: "channel login, or channel/VOD/clip URL" },
   { value: "kick", label: "Kick", hint: "channel slug or kick.com URL" },
 ];
 

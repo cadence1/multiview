@@ -57,26 +57,45 @@ async function helixFetch(path: string, params: [string, string][]): Promise<any
   return res.json();
 }
 
-function extractLogin(raw: string): string {
-  let q = raw.trim();
+type ParsedQuery =
+  | { kind: "login"; value: string }
+  | { kind: "videoId"; value: string }
+  | { kind: "clipSlug"; value: string };
+
+function parseQuery(raw: string): ParsedQuery {
+  const q = raw.trim();
+
   try {
-    if (q.includes("twitch.tv")) {
-      const url = new URL(q.startsWith("http") ? q : `https://${q}`);
-      const parts = url.pathname.split("/").filter(Boolean);
-      if (parts[0]) q = parts[0];
+    const url = new URL(q.includes("://") ? q : `https://${q}`);
+    const host = url.hostname.replace(/^www\.|^m\./, "");
+    const parts = url.pathname.split("/").filter(Boolean);
+
+    // clips.twitch.tv/{slug} — a short clip link, channel-agnostic.
+    if (host === "clips.twitch.tv" && parts[0]) {
+      return { kind: "clipSlug", value: parts[0] };
+    }
+
+    if (host === "twitch.tv") {
+      // twitch.tv/videos/{id} — a VOD link, also channel-agnostic.
+      if (parts[0] === "videos" && parts[1]) {
+        return { kind: "videoId", value: parts[1] };
+      }
+      // twitch.tv/{channel}/clip/{slug}
+      if (parts.length >= 3 && parts[1] === "clip" && parts[2]) {
+        return { kind: "clipSlug", value: parts[2] };
+      }
+      if (parts[0]) {
+        return { kind: "login", value: parts[0] };
+      }
     }
   } catch {
-    // not a URL, use as-is
+    // not a URL, fall through
   }
-  return q.replace(/^@/, "").toLowerCase();
+
+  return { kind: "login", value: q.replace(/^@/, "") };
 }
 
-async function resolveChannel(query: string): Promise<ResolvedChannel | null> {
-  const login = extractLogin(query);
-  if (!login) return null;
-  const data = await helixFetch("/users", [["login", login]]);
-  const user = data?.data?.[0];
-  if (!user) return null;
+function toResolvedChannel(user: any): ResolvedChannel {
   return {
     platform: "twitch",
     platformId: user.id,
@@ -84,6 +103,39 @@ async function resolveChannel(query: string): Promise<ResolvedChannel | null> {
     displayName: user.display_name || user.login,
     avatarUrl: user.profile_image_url || "",
   };
+}
+
+async function resolveByLogin(login: string): Promise<ResolvedChannel | null> {
+  if (!login) return null;
+  const data = await helixFetch("/users", [["login", login.toLowerCase()]]);
+  const user = data?.data?.[0];
+  return user ? toResolvedChannel(user) : null;
+}
+
+async function resolveById(id: string): Promise<ResolvedChannel | null> {
+  const data = await helixFetch("/users", [["id", id]]);
+  const user = data?.data?.[0];
+  return user ? toResolvedChannel(user) : null;
+}
+
+async function resolveChannel(query: string): Promise<ResolvedChannel | null> {
+  const parsed = parseQuery(query);
+
+  if (parsed.kind === "videoId") {
+    const data = await helixFetch("/videos", [["id", parsed.value]]);
+    const video = data?.data?.[0];
+    if (!video) return null;
+    return resolveByLogin(video.user_login);
+  }
+
+  if (parsed.kind === "clipSlug") {
+    const data = await helixFetch("/clips", [["id", parsed.value]]);
+    const clip = data?.data?.[0];
+    if (!clip) return null;
+    return resolveById(clip.broadcaster_id);
+  }
+
+  return resolveByLogin(parsed.value);
 }
 
 function chunk<T>(arr: T[], size: number): T[][] {

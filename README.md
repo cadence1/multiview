@@ -49,8 +49,10 @@ always show as offline.
 
 ## Using it
 
-1. Click **+ Add** in the sidebar, pick a platform, and paste a handle/URL
-   (e.g. `@handle`, a full YouTube/Twitch/Kick URL, or just a channel login).
+1. Click **+ Add** in the sidebar, pick a platform, and paste a handle or URL
+   — a channel URL/handle/login works, and so does a **full video URL**
+   (YouTube watch/`youtu.be`/Shorts/live-share links, a Twitch VOD or clip
+   link, a Kick video link) — the creator who owns it gets tracked.
 2. Tracked creators show up grouped by **Live → Upcoming → Offline**.
 3. Click a **live** creator to add their stream to the multiview grid; click
    again (or the ✕ on the cell) to remove it.
