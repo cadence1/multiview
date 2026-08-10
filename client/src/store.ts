@@ -35,6 +35,7 @@ interface MultiviewState {
   refreshStatuses: () => Promise<void>;
   addCreator: (platform: Platform, query: string) => Promise<void>;
   removeCreator: (id: string) => Promise<void>;
+  removeCreators: (ids: string[]) => Promise<void>;
   importCreators: (creators: ExportedCreator[]) => Promise<ImportResult>;
   toggleGrid: (id: string) => void;
   removeFromGrid: (id: string) => void;
@@ -108,6 +109,20 @@ export const useStore = create<MultiviewState>((set, get) => ({
       creators: state.creators.filter((c) => c.id !== id),
       gridIds: state.gridIds.filter((g) => g !== id),
       autoAddIds: state.autoAddIds.filter((g) => g !== id),
+    }));
+    saveIds(GRID_STORAGE_KEY, get().gridIds);
+    saveIds(AUTO_ADD_STORAGE_KEY, get().autoAddIds);
+  },
+
+  removeCreators: async (ids) => {
+    // No bulk endpoint server-side — just fire the per-id deletes in
+    // parallel and settle the store once, rather than N separate renders.
+    await Promise.all(ids.map((id) => api.removeCreator(id)));
+    const idSet = new Set(ids);
+    set((state) => ({
+      creators: state.creators.filter((c) => !idSet.has(c.id)),
+      gridIds: state.gridIds.filter((g) => !idSet.has(g)),
+      autoAddIds: state.autoAddIds.filter((g) => !idSet.has(g)),
     }));
     saveIds(GRID_STORAGE_KEY, get().gridIds);
     saveIds(AUTO_ADD_STORAGE_KEY, get().autoAddIds);

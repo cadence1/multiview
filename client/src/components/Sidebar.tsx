@@ -52,15 +52,43 @@ export default function Sidebar({ onAddCreator, onClose }: Props) {
   const autoAddIds = useStore((s) => s.autoAddIds);
   const toggleGrid = useStore((s) => s.toggleGrid);
   const toggleAutoAdd = useStore((s) => s.toggleAutoAdd);
-  const removeCreator = useStore((s) => s.removeCreator);
+  const removeCreators = useStore((s) => s.removeCreators);
   const importCreators = useStore((s) => s.importCreators);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [selecting, setSelecting] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   function showNotice(message: string) {
     setNotice(message);
     setTimeout(() => setNotice((current) => (current === message ? null : current)), 5000);
+  }
+
+  function toggleSelecting() {
+    setSelecting((s) => !s);
+    setSelectedIds(new Set());
+  }
+
+  function toggleSelected(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function handleBulkDelete() {
+    if (selectedIds.size === 0) return;
+    const count = selectedIds.size;
+    const ok = window.confirm(
+      `Stop tracking ${count} creator${count === 1 ? "" : "s"}? This can't be undone.`
+    );
+    if (!ok) return;
+    await removeCreators(Array.from(selectedIds));
+    setSelecting(false);
+    setSelectedIds(new Set());
   }
 
   function handleExport() {
@@ -137,6 +165,17 @@ export default function Sidebar({ onAddCreator, onClose }: Props) {
           <span className="text-sm font-semibold text-slate-200">Creators</span>
           <div className="flex items-center gap-1">
             <button
+              onClick={toggleSelecting}
+              className={`rounded-md px-2 py-1 text-xs font-medium ${
+                selecting
+                  ? "bg-base-700 text-slate-200 hover:bg-base-600"
+                  : "bg-red-600/80 text-white hover:bg-red-500"
+              }`}
+              title={selecting ? "Cancel deleting" : "Select creators to delete"}
+            >
+              {selecting ? "Cancel" : "Delete"}
+            </button>
+            <button
               onClick={onAddCreator}
               className="rounded-md bg-indigo-600 px-2 py-1 text-xs font-medium text-white hover:bg-indigo-500"
             >
@@ -152,30 +191,48 @@ export default function Sidebar({ onAddCreator, onClose }: Props) {
           </div>
         </div>
 
-        <div className="mt-1.5 flex items-center gap-1">
-          <button
-            onClick={handleExport}
-            disabled={creators.length === 0}
-            className="rounded-md px-1.5 py-0.5 text-[11px] text-slate-400 hover:bg-base-800 hover:text-slate-200 disabled:pointer-events-none disabled:opacity-40"
-            title="Download tracked creators as a JSON file"
-          >
-            Export
-          </button>
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            className="rounded-md px-1.5 py-0.5 text-[11px] text-slate-400 hover:bg-base-800 hover:text-slate-200"
-            title="Import creators from a JSON file"
-          >
-            Import
-          </button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="application/json"
-            className="hidden"
-            onChange={handleFileChange}
-          />
-        </div>
+        {selecting ? (
+          <div className="mt-1.5 flex items-center gap-2">
+            <span className="text-[11px] text-slate-400">
+              {selectedIds.size === 0
+                ? "Check creators to delete"
+                : `${selectedIds.size} selected`}
+            </span>
+            {selectedIds.size > 0 && (
+              <button
+                onClick={handleBulkDelete}
+                className="rounded-md bg-red-600 px-1.5 py-0.5 text-[11px] font-medium text-white hover:bg-red-500"
+              >
+                Delete ({selectedIds.size})
+              </button>
+            )}
+          </div>
+        ) : (
+          <div className="mt-1.5 flex items-center gap-1">
+            <button
+              onClick={handleExport}
+              disabled={creators.length === 0}
+              className="rounded-md px-1.5 py-0.5 text-[11px] text-slate-400 hover:bg-base-800 hover:text-slate-200 disabled:pointer-events-none disabled:opacity-40"
+              title="Download tracked creators as a JSON file"
+            >
+              Export
+            </button>
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="rounded-md px-1.5 py-0.5 text-[11px] text-slate-400 hover:bg-base-800 hover:text-slate-200"
+              title="Import creators from a JSON file"
+            >
+              Import
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="application/json"
+              className="hidden"
+              onChange={handleFileChange}
+            />
+          </div>
+        )}
 
         {notice && <p className="mt-1.5 text-[11px] text-slate-400">{notice}</p>}
       </div>
@@ -204,7 +261,9 @@ export default function Sidebar({ onAddCreator, onClose }: Props) {
                       autoAdd={autoAddIds.includes(creator.id)}
                       onToggleGrid={() => toggleGrid(creator.id)}
                       onToggleAutoAdd={() => toggleAutoAdd(creator.id)}
-                      onRemove={() => removeCreator(creator.id)}
+                      selecting={selecting}
+                      selected={selectedIds.has(creator.id)}
+                      onToggleSelect={() => toggleSelected(creator.id)}
                     />
                   ))}
                 </div>
