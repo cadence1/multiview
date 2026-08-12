@@ -1,7 +1,7 @@
 # Multiview
 
-A self-hosted site to track creators across **YouTube**, **Twitch**, **Kick**,
-and **RPlay**, see who's live or upcoming, and drop live streams into a
+A self-hosted site to track creators across **YouTube**, **Twitch**, and **Kick**,
+see who's live or upcoming, and drop live streams into a
 multi-cell viewing grid.
 
 - **Server** (`server/`) — Express + TypeScript, SQLite storage, background
