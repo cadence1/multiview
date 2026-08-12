@@ -1,8 +1,8 @@
 # Multiview
 
-A self-hosted site to track creators across **YouTube**, **Twitch**, and **Kick**,
-see who's live or upcoming, and drop live streams into a
-multi-cell viewing grid.
+A self-hosted site to track creators across **YouTube**, **Twitch**, and
+**Kick**, see who's live or upcoming, and drop live streams into a multi-cell
+viewing grid.
 
 - **Server** (`server/`) — Express + TypeScript, SQLite storage, background
   poller that keeps a live/upcoming/offline status cache fresh.
@@ -43,7 +43,6 @@ couple of optional/required keys make things more reliable:
 | `YOUTUBE_API_KEY` | YouTube | Optional | [Google Cloud Console](https://console.cloud.google.com/) → enable "YouTube Data API v3" → create an API key. Improves channel lookup when adding a creator; live-status polling never uses API quota. |
 | `TWITCH_CLIENT_ID` / `TWITCH_CLIENT_SECRET` | Twitch | **Required for Twitch** | Free app at [dev.twitch.tv/console/apps](https://dev.twitch.tv/console/apps). Any redirect URL works (e.g. `http://localhost`) — it's not used, only the client credentials flow is. |
 | `KICK_CLIENT_ID` / `KICK_CLIENT_SECRET` | Kick | **Required for Kick** | Free app at [kick.com/settings/developer](https://kick.com/settings/developer), with the `channel:read` and `user:read` scopes. Any redirect URL works, same as Twitch — only the client credentials flow is used. |
-| — | RPlay | n/a | Uses RPlay's public (unofficial) endpoints. No signup, but see the caveats below — treat RPlay support as best-effort. |
 
 Without Twitch/Kick credentials, creators on that platform can still be
 tracked but will always show as offline.
@@ -53,9 +52,7 @@ tracked but will always show as offline.
 1. Click **+ Add** in the sidebar, pick a platform, and paste a handle or URL
    — a channel URL/handle/login works, and so does a **full video URL**
    (YouTube watch/`youtu.be`/Shorts/live-share links, a Twitch VOD or clip
-   link, a Kick video link) — the creator who owns it gets tracked. RPlay is
-   the exception: it has no username search, so paste their `rplay.live`
-   profile/live URL (or just their id) rather than a name.
+   link, a Kick video link) — the creator who owns it gets tracked.
 2. Tracked creators show up grouped by **Live → Upcoming → Offline**.
 3. Click a **live** creator to add their stream to the multiview grid; click
    again (or the ✕ on the cell) to remove it.
@@ -69,8 +66,7 @@ tracked but will always show as offline.
    whichever one you pick. Twitch chat works regardless of live status;
    YouTube chat only exists once the video is live (and only if the
    broadcaster has chat enabled); Kick has no embeddable chat, so it links
-   out to kick.com instead; RPlay's chat is already part of its grid cell
-   (see below), so its tab just says so instead of duplicating it.
+   out to kick.com instead.
 7. Click the **Multiview** title to open the same page in a new window.
 8. Click **Media** (top right) to dock a volume panel — a **Main volume**
    slider scales every window at once, and each on-screen creator gets their
@@ -78,9 +74,7 @@ tracked but will always show as offline.
    they're added). YouTube and Twitch get real live volume control via their
    official player APIs, capped at 100% (that's the platforms' own limit,
    not something we can push past from a regular web page); Kick has no
-   such API, so it's mute/unmute only; RPlay has no remote control at all —
-   its cell starts muted and you unmute it by clicking directly inside that
-   cell.
+   such API, so it's mute/unmute only.
 
 Which creators you *track* is stored server-side (SQLite), so it's shared
 across any device that opens the app. Which ones are currently *in the grid*,
@@ -107,24 +101,6 @@ actual platform ID, not that internal one.
   can break if YouTube changes its page structure.
 - **Kick** uses Kick's official public API (`api.kick.com`), same
   client-credentials OAuth pattern as Twitch — see the table above.
-- **RPlay** has no official API or developer program — this uses the same
-  unauthenticated endpoints its own web client calls, which can change or
-  start rate-limiting without notice (same caveat Kick used to carry before
-  it got an official API). A few things are also structurally different
-  from the other three platforms, not just "less reliable":
-  - Creators are identified by a raw id in RPlay's own URLs, with no
-    username search available — see "Using it" above.
-  - There's no dedicated minimal embeddable player, so a live RPlay cell
-    shows RPlay's *full* page (nav, chat, buttons) rather than a clean
-    player like the other three platforms get, and it can't be remote
-    volume-controlled — see "Using it" above for both.
-  - **RPlay hosts a substantial amount of explicit/adult content.**
-    Streams flagged as adult show an in-page age-verification gate before
-    they'll play, which — since it's a real cross-origin embed of RPlay's
-    own page — this app has no way to detect or click through on your
-    behalf; you'd confirm it yourself directly inside that cell, same as
-    you would on rplay.live itself. Know what you're tracking before you
-    add it to a shared or exposed instance.
 - **No drag-to-resize grid** in this version — the grid auto-arranges by
   count. Would be a reasonable follow-up.
 
