@@ -5,6 +5,7 @@ import { statusCache } from "../cache.js";
 import { adapters } from "../platforms/index.js";
 import type { Platform } from "../platforms/types.js";
 import { pollPlatformNow } from "../poller.js";
+import { subscribeAll, unsubscribe as unsubscribePush } from "../youtubePush.js";
 
 const PLATFORMS: Platform[] = ["youtube", "twitch", "kick", "rplay"];
 
@@ -65,6 +66,13 @@ creatorsRouter.post("/", async (req, res) => {
   pollPlatformNow(resolved.platform, [
     { id: row.id, platform: row.platform, platformId: row.platform_id, handle: row.handle },
   ]).catch(() => {});
+
+  // No-op unless YOUTUBE_PUSH_CALLBACK_URL/SECRET are set — the daily
+  // renewal in youtubePush.ts would pick this creator up anyway, this just
+  // avoids waiting up to a day for push coverage on a freshly-added one.
+  if (row.platform === "youtube") {
+    subscribeAll([row.platform_id]).catch(() => {});
+  }
 
   res.status(201).json(row);
 });
@@ -146,6 +154,11 @@ creatorsRouter.post("/import", async (req, res) => {
     pollPlatformNow(platform, list).catch(() => {});
   }
 
+  const importedYoutubeIds = byPlatform.get("youtube")?.map((c) => c.platformId) ?? [];
+  if (importedYoutubeIds.length > 0) {
+    subscribeAll(importedYoutubeIds).catch(() => {});
+  }
+
   res.json({ imported, skipped, errors });
 });
 
@@ -155,5 +168,10 @@ creatorsRouter.delete("/:id", (req, res) => {
   if (!existing) return res.status(404).json({ error: "not found" });
   statements.deleteCreator.run(id);
   statusCache.remove(id);
+  // Best-effort — if this fails, the subscription just expires on its own
+  // (see LEASE_SECONDS in youtubePush.ts) rather than being renewed daily.
+  if (existing.platform === "youtube") {
+    unsubscribePush(existing.platform_id).catch(() => {});
+  }
   res.status(204).end();
 });

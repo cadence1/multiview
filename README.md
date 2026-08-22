@@ -47,6 +47,65 @@ couple of optional/required keys make things more reliable:
 Without Twitch/Kick credentials, creators on that platform can still be
 tracked but will always show as offline.
 
+## YouTube push notifications (optional)
+
+YouTube has no batched live-status API (see "Notes & limitations" below), so
+by default catching a YouTube creator going live means waiting for the next
+poll — including an unscheduled/"guerrilla" stream nobody announced, which
+has no earlier "upcoming" state to fast-poll off of. YouTube's own
+[PubSubHubbub push notifications](https://developers.google.com/youtube/v3/guides/push_notifications)
+close that gap: subscribe to a channel and Google's hub pushes a near-instant
+notification whenever it changes, which triggers an immediate real check of
+just that one channel — no polling wait either way. It's additive, not a
+replacement: the regular poller (and the imminent-stream fast lane) keep
+running exactly as before, as a safety net for any notification that's
+missed, delayed, or never fires.
+
+This needs a **publicly reachable HTTPS endpoint** for Google's hub to
+deliver notifications to — not required for anything else in this app, which
+is otherwise fine to leave LAN-only. [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/)
+is a good fit: it's free, needs no inbound port-forward, and can expose just
+this one path rather than the whole app. To set it up:
+
+1. **Generate a secret** — `openssl rand -hex 32` (or anything long and
+   random). This authenticates incoming notifications; treat it like a
+   password, never commit it.
+2. **Set both env vars** in `.env`:
+   ```
+   YOUTUBE_PUSH_CALLBACK_URL=https://push.yourdomain.com/api/youtube-push
+   YOUTUBE_PUSH_SECRET=<the secret from step 1>
+   ```
+   (using whatever hostname you route the tunnel to below).
+3. **Route only that one path** through the tunnel — in `cloudflared`'s
+   ingress config (or the equivalent Zero Trust dashboard rule), scope it
+   tightly rather than exposing the whole app:
+   ```yaml
+   ingress:
+     - hostname: push.yourdomain.com
+       path: /api/youtube-push
+       service: http://localhost:8080
+     - service: http_status:404
+   ```
+4. **(Recommended) Add a Cloudflare WAF/IP Access rule** restricting that
+   hostname to Google's IP ranges, published and kept current at
+   [gstatic.com/ipranges/goog.json](https://www.gstatic.com/ipranges/goog.json).
+   Note this is coarse — it's all of Google's IP space, not narrowly scoped
+   to just this one hub — so treat it as defense-in-depth on top of, not
+   instead of, the signature check below, which is the actual guarantee
+   that a notification is genuine.
+5. **Restart the server.** On startup (and once daily thereafter, to renew
+   the subscription before it lapses) it subscribes every tracked YouTube
+   creator; newly-added ones are subscribed immediately too.
+
+Every incoming notification is verified against `YOUTUBE_PUSH_SECRET` via
+the `X-Hub-Signature` HMAC header Google's hub signs it with — anything that
+doesn't match is silently dropped, regardless of where it came from. That
+signature check, not IP filtering, is the real security boundary here.
+
+Leave both env vars unset to skip all of this — push notifications are
+entirely optional, and everything works via polling alone without them,
+same as before this feature existed.
+
 ## Using it
 
 1. Click **+ Add** in the sidebar, pick a platform, and paste a handle or URL
@@ -101,6 +160,13 @@ actual platform ID, not that internal one.
   can break if YouTube changes its page structure.
 - **Kick** uses Kick's official public API (`api.kick.com`), same
   client-credentials OAuth pattern as Twitch — see the table above.
+- **YouTube push notifications** (if configured) rely on a hub event Google's
+  own docs don't officially name as a distinct trigger — they document
+  "uploads/retitles/re-describes a video," not "starts a livestream"
+  explicitly, though a livestream going live does fire one in practice (the
+  same mechanism most "new video" notification bots rely on). Treated
+  accordingly: a notification just triggers an immediate real check via the
+  normal adapter, never trusted as "definitely live" on its own.
 - **No drag-to-resize grid** in this version — the grid auto-arranges by
   count. Would be a reasonable follow-up.
 
@@ -112,8 +178,9 @@ server/src/
   db.ts           SQLite schema + prepared statements
   cache.ts        In-memory status cache written by the poller, read by the API
   poller.ts       Background loop that refreshes live/upcoming status
+  youtubePush.ts  Optional YouTube PubSubHubbub push notifications
   platforms/      One adapter per platform (resolveChannel + getStatuses)
-  routes/         REST endpoints (/api/creators, /api/status)
+  routes/         REST endpoints (/api/creators, /api/status, /api/youtube-push)
 
 client/src/
   store.ts        Zustand store: tracked creators, statuses, grid selection

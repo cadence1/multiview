@@ -7,7 +7,9 @@ import { env } from "./env.js";
 import "./db.js";
 import { creatorsRouter } from "./routes/creators.js";
 import { statusRouter } from "./routes/status.js";
+import { youtubePushRouter } from "./routes/youtubePush.js";
 import { startPoller } from "./poller.js";
+import { startPushRenewal } from "./youtubePush.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -17,6 +19,11 @@ app.use(express.json());
 
 app.use("/api/creators", creatorsRouter);
 app.use("/api/status", statusRouter);
+// The POST side reads the raw request body itself (see routes/youtubePush.ts)
+// rather than the express.json() above — that's harmless here since
+// express.json() only consumes the body when Content-Type is
+// application/json, and Google's hub sends application/atom+xml.
+app.use("/api/youtube-push", youtubePushRouter);
 
 app.get("/api/health", (_req, res) => {
   res.json({ ok: true, pollIntervalSeconds: env.pollIntervalSeconds });
@@ -33,6 +40,7 @@ if (fs.existsSync(publicDir)) {
 }
 
 startPoller();
+startPushRenewal();
 
 app.listen(env.port, () => {
   console.log(`Multiview server listening on http://localhost:${env.port}`);

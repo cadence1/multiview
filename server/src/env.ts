@@ -32,4 +32,11 @@ export const env = {
   kickClientId: process.env.KICK_CLIENT_ID || "",
   kickClientSecret: process.env.KICK_CLIENT_SECRET || "",
   pollIntervalSeconds: Number(process.env.POLL_INTERVAL_SECONDS || 300),
+  // Both required together to enable YouTube push notifications (see
+  // youtubePush.ts) — the callback URL is where Google's PubSubHubbub hub
+  // delivers them (must be publicly reachable), the secret authenticates
+  // them (HMAC via X-Hub-Signature). Unset by default: push is purely an
+  // optional accelerant on top of the regular poller, never a replacement.
+  youtubePushCallbackUrl: process.env.YOUTUBE_PUSH_CALLBACK_URL || "",
+  youtubePushSecret: process.env.YOUTUBE_PUSH_SECRET || "",
 };
