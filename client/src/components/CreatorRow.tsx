@@ -194,7 +194,7 @@ export default function CreatorRow({
               ? "bg-base-700 text-slate-200 opacity-100"
               : "text-slate-500 opacity-0 hover:bg-base-700 hover:text-slate-200 group-hover:opacity-100"
           }`}
-          title="Pin, always-record, and other options"
+          title="Options"
         >
           ⋮
         </button>
