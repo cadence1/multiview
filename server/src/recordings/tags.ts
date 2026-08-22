@@ -57,8 +57,16 @@ export function autoTagsFor(input: AutoTagInput): string[] {
   return [...tags];
 }
 
-export function applyAutoTags(recordingId: string, input: AutoTagInput): void {
-  for (const tag of autoTagsFor(input)) {
+/** Returns what it applied (not just void) so the caller can hand it
+ * straight back in an API response — recorder.ts's startRecording/
+ * downloadVideo both need the freshly-created recording's tags in their
+ * own return value, not just written to the DB, so the client's optimistic
+ * update has the real list immediately instead of an empty one until the
+ * next poll. */
+export function applyAutoTags(recordingId: string, input: AutoTagInput): string[] {
+  const generated = autoTagsFor(input);
+  for (const tag of generated) {
     statements.tags.addToRecording(recordingId, tag);
   }
+  return generated;
 }

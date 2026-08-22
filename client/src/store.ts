@@ -351,9 +351,16 @@ export const useStore = create<MultiviewState>((set, get) => ({
 
   stopRecording: async (id) => {
     await api.stopRecording(id);
-    // The server finalizes (remux, final size) asynchronously after the
-    // process actually exits — refresh shortly after so the list picks up
-    // the real completed state instead of staying on "recording".
+    // Same reasoning as startRecording's response now carrying isActive
+    // directly — flip it immediately rather than waiting on a poll, so the
+    // options menu's toggle responds the instant it's clicked. status stays
+    // "recording" until the real refresh below though: the server finalizes
+    // (remux, final size) asynchronously after the process actually exits,
+    // and guessing "completed" here could easily be wrong (stalled/failed/
+    // low-disk are all real outcomes too).
+    set((state) => ({
+      recordings: state.recordings.map((r) => (r.id === id ? { ...r, isActive: false } : r)),
+    }));
     setTimeout(() => {
       get().refreshRecordings().catch(() => {});
     }, 3000);

@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import type { Creator, StreamState } from "../types.js";
 import PlatformBadge from "./PlatformBadge.js";
+import ToggleSwitch from "./ToggleSwitch.js";
 import { homeUrlFor } from "../utils.js";
 
 const MENU_WIDTH = 224;
@@ -136,10 +137,13 @@ export default function CreatorOptionsMenu({
       {canRecordNow && (
         <button
           onClick={onToggleRecording}
-          className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-slate-200 hover:bg-base-800"
+          className="flex w-full items-center justify-between px-3 py-1.5 text-left text-xs text-slate-200 hover:bg-base-800"
         >
-          <span aria-hidden>{isRecording ? "⏹" : "⏺"}</span>
-          {isRecording ? "Stop recording" : "Record now"}
+          <span className="flex items-center gap-2">
+            <span aria-hidden>{isRecording ? "⏹" : "⏺"}</span>
+            {isRecording ? "Recording" : "Record now"}
+          </span>
+          <ToggleSwitch on={isRecording} />
         </button>
       )}
 

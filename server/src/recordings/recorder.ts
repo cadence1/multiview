@@ -300,7 +300,14 @@ async function offloadToS3(recordingId: string, fileName: string, thumbnailFileN
 
 export interface StartRecordingResult {
   ok: boolean;
-  recording?: RecordingRow;
+  // isActive/tags aren't real RecordingRow columns (see listRecordings) —
+  // included here too so a freshly-started recording's API response
+  // already matches the shape the client's Recording type expects,
+  // instead of the client only finding out on the next GET /recordings
+  // poll. A real bug this fixed: the options menu's recording indicator
+  // used to only update after a refresh, since the optimistic client-side
+  // insert had isActive/tags silently undefined until then.
+  recording?: RecordingRow & { isActive: boolean; tags: string[] };
   error?: string;
 }
 
@@ -354,7 +361,7 @@ export async function startRecording(creator: CreatorRow, status: CreatorStatus)
   // Right away, not after the file finishes — display_name/title/started_at
   // are all already known, and it means the tags show up in the UI even
   // while status is still "recording".
-  tags.applyAutoTags(recordingId, { displayName: creator.display_name, title: row.title, startedAt });
+  const appliedTags = tags.applyAutoTags(recordingId, { displayName: creator.display_name, title: row.title, startedAt });
 
   const child = spawn("yt-dlp", [sourceUrl, "-o", outputTemplate, "--no-playlist", "--no-part", "--newline"], {
     stdio: ["ignore", "ignore", "pipe"],
@@ -411,7 +418,7 @@ export async function startRecording(creator: CreatorRow, status: CreatorStatus)
     );
   });
 
-  return { ok: true, recording: row };
+  return { ok: true, recording: { ...row, isActive: true, tags: appliedTags } };
 }
 
 /** Maps yt-dlp's extractor name to one of our own platform labels when it's
@@ -550,7 +557,7 @@ export async function downloadVideo(url: string): Promise<StartRecordingResult> 
     storage_location: "local",
   };
   statements.insertRecording.run(row);
-  tags.applyAutoTags(recordingId, {
+  const appliedTags = tags.applyAutoTags(recordingId, {
     displayName: metadata.displayName,
     title: metadata.title,
     startedAt,
@@ -630,7 +637,7 @@ export async function downloadVideo(url: string): Promise<StartRecordingResult> 
     );
   });
 
-  return { ok: true, recording: row };
+  return { ok: true, recording: { ...row, isActive: true, tags: appliedTags } };
 }
 
 export async function deleteRecording(recordingId: string): Promise<{ ok: boolean; error?: string }> {
