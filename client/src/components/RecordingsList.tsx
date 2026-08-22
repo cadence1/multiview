@@ -69,7 +69,20 @@ const STATUS_LABEL: Record<RecordingStatus, string> = {
  * no filter to drive), an × on hover to remove one, and a small inline
  * "+ tag" control to add your own on top.
  */
-function TagChips({ recording, onTagClick }: { recording: Recording; onTagClick?: (tag: string) => void }) {
+function TagChips({
+  recording,
+  onTagClick,
+  compact,
+}: {
+  recording: Recording;
+  onTagClick?: (tag: string) => void;
+  /** Caps each tag's own displayed width with an ellipsis — the slide-out
+   * panel is only 384px wide, and a long auto-generated tag (a creator's
+   * full display name, especially) can otherwise dominate the whole thing
+   * or wrap awkwardly. The full /saved page has the room to just show
+   * everything. */
+  compact?: boolean;
+}) {
   const addRecordingTag = useStore((s) => s.addRecordingTag);
   const removeRecordingTag = useStore((s) => s.removeRecordingTag);
   const [adding, setAdding] = useState(false);
@@ -91,7 +104,12 @@ function TagChips({ recording, onTagClick }: { recording: Recording; onTagClick?
           key={tag}
           className="group inline-flex items-center gap-1 rounded-full bg-base-800 px-2 py-0.5 text-[10px] text-slate-300"
         >
-          <button type="button" onClick={() => onTagClick?.(tag)} className="hover:text-indigo-300" title={`Filter by "${tag}"`}>
+          <button
+            type="button"
+            onClick={() => onTagClick?.(tag)}
+            className={`hover:text-indigo-300 ${compact ? "max-w-[7rem] truncate" : ""}`}
+            title={compact ? tag : `Filter by "${tag}"`}
+          >
             {tag}
           </button>
           <button
@@ -128,7 +146,15 @@ function TagChips({ recording, onTagClick }: { recording: Recording; onTagClick?
   );
 }
 
-function RecordingRow({ recording, onTagClick }: { recording: Recording; onTagClick?: (tag: string) => void }) {
+function RecordingRow({
+  recording,
+  onTagClick,
+  compact,
+}: {
+  recording: Recording;
+  onTagClick?: (tag: string) => void;
+  compact?: boolean;
+}) {
   const stopRecording = useStore((s) => s.stopRecording);
   const deleteRecording = useStore((s) => s.deleteRecording);
   const inGrid = useStore((s) => s.gridRecordingIds.includes(recording.id));
@@ -220,7 +246,7 @@ function RecordingRow({ recording, onTagClick }: { recording: Recording; onTagCl
             </p>
           )}
 
-          <TagChips recording={recording} onTagClick={onTagClick} />
+          <TagChips recording={recording} onTagClick={onTagClick} compact={compact} />
 
           <div className="mt-1 flex items-center gap-2 text-[11px]">
             {recording.status === "recording" ? (
@@ -296,12 +322,15 @@ interface RecordingsListProps {
    * (both must match) when both are set, same as the slide-out panel just
    * omitting this and showing everything. */
   searchQuery?: string;
+  /** Truncates each tag chip — set by the slide-out panel, which is narrow;
+   * omitted (full tags) on the full /saved page. See TagChips. */
+  compact?: boolean;
 }
 
 /** The actual recordings list — no outer chrome (header/close button) of
  * its own, so callers (SavedPage today; the old slide-out RecordingsPanel
  * before it) supply whatever page/panel frame makes sense for them. */
-export default function RecordingsList({ filterTag, onTagClick, searchQuery }: RecordingsListProps) {
+export default function RecordingsList({ filterTag, onTagClick, searchQuery, compact }: RecordingsListProps) {
   const recordings = useStore((s) => s.recordings);
   const visible = recordings.filter(
     (r) => (!filterTag || r.tags.includes(filterTag)) && matchesSearch(r, searchQuery ?? "")
@@ -329,7 +358,7 @@ export default function RecordingsList({ filterTag, onTagClick, searchQuery }: R
   return (
     <div className="space-y-2">
       {visible.map((r) => (
-        <RecordingRow key={r.id} recording={r} onTagClick={onTagClick} />
+        <RecordingRow key={r.id} recording={r} onTagClick={onTagClick} compact={compact} />
       ))}
     </div>
   );

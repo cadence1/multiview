@@ -39,7 +39,7 @@ export default function RecordingsPanel({ onClose }: Props) {
       <StorageBar />
 
       <div className="flex-1 overflow-y-auto p-2">
-        <RecordingsList />
+        <RecordingsList compact />
       </div>
     </aside>
   );
