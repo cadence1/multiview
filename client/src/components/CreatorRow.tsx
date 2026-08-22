@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Creator, CreatorStatus } from "../types.js";
 import { formatElapsed, formatRelativeToNow, homeUrlFor } from "../utils.js";
 import PlatformBadge from "./PlatformBadge.js";
@@ -55,6 +55,36 @@ export default function CreatorRow({
   const showPreview = hovering && !selecting && !menuOpen && (state === "upcoming" || state === "live");
   const hasActiveOptions =
     autoAdd || Boolean(creator.auto_record) || Boolean(creator.record_next) || isRecording;
+
+  // Menu opens on hover of the ⋮ trigger rather than a click — a click that
+  // both opens *and* has to be clicked again to close felt fiddly. A short
+  // close delay (instead of closing the instant the pointer leaves the
+  // trigger) gives it room to travel the gap into the flyout itself, which
+  // reports back through the same open/schedule-close pair on its own
+  // hover so it doesn't vanish out from under the pointer.
+  const menuCloseTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function openMenu() {
+    if (menuCloseTimeout.current) {
+      clearTimeout(menuCloseTimeout.current);
+      menuCloseTimeout.current = null;
+    }
+    setMenuOpen(true);
+  }
+
+  function scheduleMenuClose() {
+    if (menuCloseTimeout.current) clearTimeout(menuCloseTimeout.current);
+    menuCloseTimeout.current = setTimeout(() => {
+      setMenuOpen(false);
+      menuCloseTimeout.current = null;
+    }, 200);
+  }
+
+  useEffect(() => {
+    return () => {
+      if (menuCloseTimeout.current) clearTimeout(menuCloseTimeout.current);
+    };
+  }, []);
 
   function handleClick() {
     if (selecting) {
@@ -156,10 +186,9 @@ export default function CreatorRow({
       {!selecting && (
         <button
           ref={menuButtonRef}
-          onClick={(e) => {
-            e.stopPropagation();
-            setMenuOpen((open) => !open);
-          }}
+          onMouseEnter={openMenu}
+          onMouseLeave={scheduleMenuClose}
+          onClick={(e) => e.stopPropagation()}
           className={`shrink-0 rounded px-1.5 py-0.5 text-xs transition-opacity ${
             hasActiveOptions || menuOpen
               ? "bg-base-700 text-slate-200 opacity-100"
@@ -175,6 +204,8 @@ export default function CreatorRow({
         <CreatorOptionsMenu
           anchorRect={menuButtonRef.current.getBoundingClientRect()}
           onClose={() => setMenuOpen(false)}
+          onMouseEnter={openMenu}
+          onMouseLeave={scheduleMenuClose}
           creator={creator}
           state={state}
           autoAdd={autoAdd}

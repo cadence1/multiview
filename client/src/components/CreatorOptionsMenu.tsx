@@ -3,10 +3,16 @@ import { createPortal } from "react-dom";
 import type { Creator, StreamState } from "../types.js";
 
 const MENU_WIDTH = 224;
+// No measured-height pass (same tradeoff StreamPreview makes) — just a
+// generous estimate to clamp against, since the item count here is small
+// and fixed enough that it won't run away from this.
+const MENU_HEIGHT_ESTIMATE = 200;
 
 interface Props {
   anchorRect: DOMRect;
   onClose: () => void;
+  onMouseEnter: () => void;
+  onMouseLeave: () => void;
   creator: Creator;
   state: StreamState;
   autoAdd: boolean;
@@ -22,14 +28,19 @@ interface Props {
 /**
  * Per-creator settings, condensed behind one "⋮" trigger instead of a row
  * of separate always-competing-for-space icon buttons — same portal +
- * fixed-positioning approach as StreamPreview, but interactive (click
- * targets, outside-click-to-close) rather than a passive hover card. Room
- * to grow: new per-creator toggles/actions are additional rows here, not
- * additional buttons squeezed into the row itself.
+ * fixed-positioning approach as StreamPreview, opening as a flyout to the
+ * right of the trigger. Opens/stays open on hover (of either the trigger or
+ * this menu itself — CreatorRow owns the shared open/close-delay timer so
+ * crossing the gap between them doesn't close it); mousedown outside or
+ * Escape still closes it immediately for a definite dismiss. Room to grow:
+ * new per-creator toggles/actions are additional rows here, not additional
+ * buttons squeezed into the row itself.
  */
 export default function CreatorOptionsMenu({
   anchorRect,
   onClose,
+  onMouseEnter,
+  onMouseLeave,
   creator,
   state,
   autoAdd,
@@ -58,8 +69,10 @@ export default function CreatorOptionsMenu({
     };
   }, [onClose]);
 
-  const top = Math.min(anchorRect.bottom + 4, window.innerHeight - 8);
-  const left = Math.min(Math.max(8, anchorRect.right - MENU_WIDTH), window.innerWidth - MENU_WIDTH - 8);
+  // Opens as a flyout to the right of the trigger (like StreamPreview does
+  // for a row) rather than dropping down below it.
+  const top = Math.min(Math.max(8, anchorRect.top), window.innerHeight - MENU_HEIGHT_ESTIMATE - 8);
+  const left = Math.min(anchorRect.right + 6, window.innerWidth - MENU_WIDTH - 8);
 
   const canRecordNow = recordingSupported && (isRecording || state === "live");
   // Redundant once auto_record is on (that already covers the next session
@@ -73,6 +86,8 @@ export default function CreatorOptionsMenu({
       style={{ position: "fixed", top, left, width: MENU_WIDTH, zIndex: 60 }}
       className="overflow-hidden rounded-lg border border-base-600 bg-base-900 py-1 shadow-xl"
       onClick={(e) => e.stopPropagation()}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
     >
       <button
         onClick={onToggleAutoAdd}
