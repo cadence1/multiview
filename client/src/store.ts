@@ -4,6 +4,7 @@ import { stableKey } from "./utils.js";
 import type { Creator, CreatorStatus, ExportedCreator, ImportResult, Platform, Recording, VolumeStats } from "./types.js";
 
 const GRID_STORAGE_KEY = "multiview.gridIds";
+const GRID_RECORDINGS_STORAGE_KEY = "multiview.gridRecordingIds";
 const AUTO_ADD_STORAGE_KEY = "multiview.autoAddIds";
 const MASTER_VOLUME_KEY = "multiview.masterVolume";
 const CREATOR_VOLUME_KEY = "multiview.creatorVolumes";
@@ -60,6 +61,12 @@ interface MultiviewState {
   creators: Creator[];
   statuses: Record<string, CreatorStatus>;
   gridIds: string[];
+  /** Saved recordings currently open in the multiview grid alongside live
+   * creators — same per-browser localStorage persistence as gridIds.
+   * Keyed directly by recording id: unlike a creator's id (which a fresh
+   * import mints a new one for, hence stableKey elsewhere), a recording's
+   * id is the one truly stable identifier it ever has. */
+  gridRecordingIds: string[];
   /**
    * Creators that auto-open in the grid when they go live and auto-close
    * when they end. Keyed by stableKey (platform:platform_id), NOT
@@ -87,6 +94,8 @@ interface MultiviewState {
   importCreators: (creators: ExportedCreator[]) => Promise<ImportResult>;
   toggleGrid: (id: string) => void;
   removeFromGrid: (id: string) => void;
+  toggleGridRecording: (id: string) => void;
+  removeRecordingFromGrid: (id: string) => void;
   clearGrid: () => void;
   toggleAutoAdd: (creator: Creator) => void;
   setAutoAdd: (creator: Creator, pinned: boolean) => void;
@@ -105,6 +114,7 @@ export const useStore = create<MultiviewState>((set, get) => ({
   creators: [],
   statuses: {},
   gridIds: loadIds(GRID_STORAGE_KEY),
+  gridRecordingIds: loadIds(GRID_RECORDINGS_STORAGE_KEY),
   autoAddIds: loadIds(AUTO_ADD_STORAGE_KEY),
   masterVolume: loadMasterVolume(),
   creatorVolumes: loadCreatorVolumes(),
@@ -233,9 +243,29 @@ export const useStore = create<MultiviewState>((set, get) => ({
     });
   },
 
+  toggleGridRecording: (id) => {
+    set((state) => {
+      const inGrid = state.gridRecordingIds.includes(id);
+      const gridRecordingIds = inGrid
+        ? state.gridRecordingIds.filter((g) => g !== id)
+        : [...state.gridRecordingIds, id];
+      saveIds(GRID_RECORDINGS_STORAGE_KEY, gridRecordingIds);
+      return { gridRecordingIds };
+    });
+  },
+
+  removeRecordingFromGrid: (id) => {
+    set((state) => {
+      const gridRecordingIds = state.gridRecordingIds.filter((g) => g !== id);
+      saveIds(GRID_RECORDINGS_STORAGE_KEY, gridRecordingIds);
+      return { gridRecordingIds };
+    });
+  },
+
   clearGrid: () => {
     saveIds(GRID_STORAGE_KEY, []);
-    set({ gridIds: [] });
+    saveIds(GRID_RECORDINGS_STORAGE_KEY, []);
+    set({ gridIds: [], gridRecordingIds: [] });
   },
 
   toggleAutoAdd: (creator) => {
@@ -323,7 +353,11 @@ export const useStore = create<MultiviewState>((set, get) => ({
 
   deleteRecording: async (id) => {
     await api.deleteRecording(id);
-    set((state) => ({ recordings: state.recordings.filter((r) => r.id !== id) }));
+    set((state) => ({
+      recordings: state.recordings.filter((r) => r.id !== id),
+      gridRecordingIds: state.gridRecordingIds.filter((g) => g !== id),
+    }));
+    saveIds(GRID_RECORDINGS_STORAGE_KEY, get().gridRecordingIds);
     // Freed space won't show up until the next storage refresh — deletion
     // is the one recording action where the disk numbers actually change,
     // so refresh proactively rather than waiting on the panel's own timer.

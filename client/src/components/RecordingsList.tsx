@@ -62,6 +62,8 @@ const STATUS_LABEL: Record<RecordingStatus, string> = {
 function RecordingRow({ recording }: { recording: Recording }) {
   const stopRecording = useStore((s) => s.stopRecording);
   const deleteRecording = useStore((s) => s.deleteRecording);
+  const inGrid = useStore((s) => s.gridRecordingIds.includes(recording.id));
+  const toggleGridRecording = useStore((s) => s.toggleGridRecording);
   const [playing, setPlaying] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -152,6 +154,13 @@ function RecordingRow({ recording }: { recording: Recording }) {
               </button>
             ) : (
               <>
+                <button
+                  onClick={() => toggleGridRecording(recording.id)}
+                  className={inGrid ? "font-medium text-emerald-400 hover:text-emerald-300" : "text-indigo-300 hover:text-indigo-200"}
+                  title={inGrid ? "Remove from the multiview grid" : "Add to the multiview grid, alongside live streams"}
+                >
+                  {inGrid ? "✓ In Multiview" : "Watch in Multiview"}
+                </button>
                 <a
                   href={`/api/recordings/${recording.id}/file`}
                   download

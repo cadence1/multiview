@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
 import { useStore } from "../store.js";
 import Sidebar from "../components/Sidebar.js";
 import ChatPanel from "../components/ChatPanel.js";
 import MediaPanel from "../components/MediaPanel.js";
+import RecordingsPanel from "../components/RecordingsPanel.js";
 import MultiviewGrid from "../components/MultiviewGrid.js";
 import AddCreatorDialog from "../components/AddCreatorDialog.js";
 
@@ -18,6 +18,7 @@ export default function MultiviewPage() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [chatOpen, setChatOpen] = useState(false);
   const [mediaOpen, setMediaOpen] = useState(false);
+  const [recordingsOpen, setRecordingsOpen] = useState(false);
 
   useEffect(() => {
     refreshCreators().catch(() => {});
@@ -86,12 +87,14 @@ export default function MultiviewPage() {
                 Chat
               </button>
             )}
-            <Link
-              to="/saved"
-              className="rounded-md border border-base-600 px-2 py-1 text-sm text-slate-300 hover:bg-base-800"
-            >
-              Recordings
-            </Link>
+            {!recordingsOpen && (
+              <button
+                onClick={() => setRecordingsOpen(true)}
+                className="rounded-md border border-base-600 px-2 py-1 text-sm text-slate-300 hover:bg-base-800"
+              >
+                Recordings
+              </button>
+            )}
           </div>
         </header>
         <div className="flex-1 min-h-0">
@@ -100,6 +103,7 @@ export default function MultiviewPage() {
       </main>
       {mediaOpen && <MediaPanel onClose={() => setMediaOpen(false)} />}
       {chatOpen && <ChatPanel onClose={() => setChatOpen(false)} />}
+      {recordingsOpen && <RecordingsPanel onClose={() => setRecordingsOpen(false)} />}
       {dialogOpen && <AddCreatorDialog onClose={() => setDialogOpen(false)} />}
     </div>
   );
