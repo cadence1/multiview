@@ -169,15 +169,30 @@ just fails with a clear error rather than breaking anything else.
   in the same list marked **📥 Downloaded**, and works with **Watch in
   Multiview** the same as any other recording.
 - **Tags**, on `/saved`, are seeded automatically the moment a recording is
-  created (no need to wait for it to finish) — the creator/uploader's name,
-  the date recorded, the video's own original publish date if that's known
-  and different (only ever known for a manual download; a live capture's
-  "recorded" and "aired" dates are the same moment), and any `[bracketed]`
-  segment found in either the title or the creator/uploader name (so a
-  title like `Stream [ASMR]` or a creator named `Foo [VTuber]` both pick up
-  their own tag automatically). Click any tag to filter the list down to
-  it, click it again (or **Clear**) to go back to everything; hover a tag
-  to remove it, or use **+ tag** to add your own on top.
+  created (no need to wait for it to finish) — the source platform
+  (YouTube/Twitch/Kick/etc.), the creator/uploader's name, the date
+  recorded, the video's own original publish date if that's known and
+  different (only ever known for a manual download; a live capture's
+  "recorded" and "aired" dates are the same moment), and any bracketed
+  segment found in either the title or the creator/uploader name —
+  recognizes ASCII `[brackets]` plus every common CJK bracket-pair style
+  used for the same convention (fullwidth `［］`, and the Japanese `【】`
+  `「」` `『』` `〈〉` `《》` `〔〕` `〖〗`), so a title like `Stream [ASMR]` or
+  `配信 【歌枠】` or `An Angel Is Freed 『3.0 DEBUT』`, or a creator named
+  `Foo [VTuber]`, all pick up their own tag automatically. Plain
+  `(parentheses)` are deliberately excluded — those are used for asides in
+  these titles, not the category-tag convention. Click any tag to filter
+  the list down to it, click it again (or **Clear**) to go back to
+  everything; hover a tag to remove it, or use **+ tag** to add your own on
+  top.
+  Tags are only ever generated once, at creation — but that pass re-runs
+  against every existing recording on every server startup (harmless if
+  nothing's changed; it just fills in whatever's missing), so a recording
+  made before tagging existed, or before a fix to the tagging rules
+  themselves, picks up the correct tags on the next restart rather than
+  staying stuck with whatever it had. The one exception is a download's
+  original publish-date tag specifically — that source data isn't kept
+  around after the download finishes, so it can't be recovered this way.
 - The **search box** on `/saved` matches against title and tags (so a
   search for a creator's name already works too, for free — see the
   creator/uploader auto-tag above) — combines with an active tag filter,

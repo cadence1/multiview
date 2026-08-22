@@ -361,7 +361,12 @@ export async function startRecording(creator: CreatorRow, status: CreatorStatus)
   // Right away, not after the file finishes — display_name/title/started_at
   // are all already known, and it means the tags show up in the UI even
   // while status is still "recording".
-  const appliedTags = tags.applyAutoTags(recordingId, { displayName: creator.display_name, title: row.title, startedAt });
+  const appliedTags = tags.applyAutoTags(recordingId, {
+    displayName: creator.display_name,
+    title: row.title,
+    startedAt,
+    platform: creator.platform,
+  });
 
   const child = spawn("yt-dlp", [sourceUrl, "-o", outputTemplate, "--no-playlist", "--no-part", "--newline"], {
     stdio: ["ignore", "ignore", "pipe"],
@@ -562,6 +567,7 @@ export async function downloadVideo(url: string): Promise<StartRecordingResult> 
     title: metadata.title,
     startedAt,
     videoDate: metadata.videoDate,
+    platform: metadata.platform,
   });
 
   const child = spawn(

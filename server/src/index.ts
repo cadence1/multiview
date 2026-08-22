@@ -10,6 +10,7 @@ import { statusRouter } from "./routes/status.js";
 import { recordingsRouter } from "./routes/recordings.js";
 import { startPoller } from "./poller.js";
 import { checkWritable } from "./recordings/storage.js";
+import { backfillAutoTags } from "./recordings/tags.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -34,6 +35,12 @@ if (fs.existsSync(publicDir)) {
     res.sendFile(path.join(publicDir, "index.html"));
   });
 }
+
+// Idempotent — safe to run on every startup (see backfillAutoTags's own
+// comment) — picks up recordings made before tagging existed at all, or
+// before a fix to the auto-tag rules themselves (e.g. the bracket regex
+// originally missing fullwidth ［］/【】).
+backfillAutoTags();
 
 startPoller();
 
