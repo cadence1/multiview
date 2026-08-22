@@ -21,6 +21,7 @@ interface Props {
   isRecording: boolean;
   onToggleRecording: () => void;
   onToggleAutoRecord: () => void;
+  onToggleRecordNext: () => void;
   onDelete: () => void;
 }
 
@@ -38,6 +39,7 @@ export default function CreatorRow({
   isRecording,
   onToggleRecording,
   onToggleAutoRecord,
+  onToggleRecordNext,
   onDelete,
 }: Props) {
   const state = status?.state ?? "offline";
@@ -51,7 +53,8 @@ export default function CreatorRow({
   const [hovering, setHovering] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const showPreview = hovering && !selecting && !menuOpen && (state === "upcoming" || state === "live");
-  const hasActiveOptions = autoAdd || Boolean(creator.auto_record) || isRecording;
+  const hasActiveOptions =
+    autoAdd || Boolean(creator.auto_record) || Boolean(creator.record_next) || isRecording;
 
   function handleClick() {
     if (selecting) {
@@ -121,6 +124,11 @@ export default function CreatorRow({
               ⏺
             </span>
           )}
+          {!isRecording && Boolean(creator.record_next) && (
+            <span className="shrink-0 text-[10px] text-red-400" title="Queued to record when live">
+              ⏱
+            </span>
+          )}
           <PlatformBadge platform={creator.platform} />
         </div>
         <div className="truncate text-xs text-slate-400">
@@ -175,6 +183,7 @@ export default function CreatorRow({
           isRecording={isRecording}
           onToggleRecording={onToggleRecording}
           onToggleAutoRecord={onToggleAutoRecord}
+          onToggleRecordNext={onToggleRecordNext}
           onDelete={onDelete}
         />
       )}

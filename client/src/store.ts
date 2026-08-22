@@ -93,6 +93,7 @@ interface MultiviewState {
   setMasterVolume: (v: number) => void;
   setCreatorVolume: (creator: Creator, v: number) => void;
   toggleAutoRecord: (creator: Creator) => Promise<void>;
+  toggleRecordNext: (creator: Creator) => Promise<void>;
   refreshRecordings: () => Promise<void>;
   startRecording: (creatorId: string) => Promise<void>;
   stopRecording: (id: string) => Promise<void>;
@@ -287,6 +288,14 @@ export const useStore = create<MultiviewState>((set, get) => ({
   toggleAutoRecord: async (creator) => {
     const next = !creator.auto_record;
     const updated = await api.setAutoRecord(creator.id, next);
+    set((state) => ({
+      creators: state.creators.map((c) => (c.id === creator.id ? updated : c)),
+    }));
+  },
+
+  toggleRecordNext: async (creator) => {
+    const next = !creator.record_next;
+    const updated = await api.setRecordNext(creator.id, next);
     set((state) => ({
       creators: state.creators.map((c) => (c.id === creator.id ? updated : c)),
     }));

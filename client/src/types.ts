@@ -10,6 +10,8 @@ export interface Creator {
   avatar_url: string;
   created_at: string;
   auto_record: 0 | 1;
+  /** One-shot — "record the next time they go live", distinct from auto_record's "every time". */
+  record_next: 0 | 1;
 }
 
 export type RecordingStatus = "recording" | "completed" | "stalled" | "failed";

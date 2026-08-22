@@ -39,6 +39,11 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify({ autoRecord }),
     }),
+  setRecordNext: (id: string, recordNext: boolean) =>
+    request<Creator>(`/creators/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ recordNext }),
+    }),
   listRecordings: () => request<Recording[]>("/recordings"),
   startRecording: (creatorId: string) =>
     request<Recording>("/recordings", {

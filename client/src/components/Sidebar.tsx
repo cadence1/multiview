@@ -61,6 +61,7 @@ export default function Sidebar({ onAddCreator, onClose }: Props) {
   const removeCreators = useStore((s) => s.removeCreators);
   const importCreators = useStore((s) => s.importCreators);
   const toggleAutoRecord = useStore((s) => s.toggleAutoRecord);
+  const toggleRecordNext = useStore((s) => s.toggleRecordNext);
   const startRecording = useStore((s) => s.startRecording);
   const stopRecording = useStore((s) => s.stopRecording);
 
@@ -323,6 +324,7 @@ export default function Sidebar({ onAddCreator, onClose }: Props) {
                           }
                         }}
                         onToggleAutoRecord={() => toggleAutoRecord(creator).catch((err) => showNotice(err.message))}
+                        onToggleRecordNext={() => toggleRecordNext(creator).catch((err) => showNotice(err.message))}
                         onDelete={() => handleDeleteOne(creator)}
                       />
                     );

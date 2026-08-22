@@ -98,11 +98,15 @@ Save a live stream to disk for later viewing — YouTube, Twitch, and Kick
 just fails with a clear error rather than breaking anything else.
 
 - **⋮ on a creator's row** opens their options: **Record now**/**Stop
-  recording** for a one-off recording of a live stream, and **Always
-  record** — a standing per-creator toggle that records every time they go
-  live, no manual click needed. A pinned (📌) or currently-recording (⏺)
-  creator shows a small marker next to their name so it's visible without
-  opening the menu.
+  recording** for a one-off recording of a live stream, **Record upcoming**
+  (shown while they're upcoming, not yet live) to queue just their *next*
+  session — it's consumed the moment that recording starts, so it won't
+  apply to sessions after that — and **Always record**, a standing
+  per-creator toggle that records every time they go live, no manual click
+  needed (turning it on clears any pending **Record upcoming** as
+  redundant). A pinned (📌), queued-to-record (⏱), or currently-recording
+  (⏺) creator shows a small marker next to their name so it's visible
+  without opening the menu.
 - **Recordings** (top right) lists everything, in progress or finished —
   play inline, download, or delete. It also shows disk usage for the whole
   volume `RECORDINGS_DIR` lives on (not just what your recordings

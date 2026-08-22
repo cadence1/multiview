@@ -15,6 +15,7 @@ interface Props {
   isRecording: boolean;
   onToggleRecording: () => void;
   onToggleAutoRecord: () => void;
+  onToggleRecordNext: () => void;
   onDelete: () => void;
 }
 
@@ -37,6 +38,7 @@ export default function CreatorOptionsMenu({
   isRecording,
   onToggleRecording,
   onToggleAutoRecord,
+  onToggleRecordNext,
   onDelete,
 }: Props) {
   const menuRef = useRef<HTMLDivElement>(null);
@@ -60,6 +62,10 @@ export default function CreatorOptionsMenu({
   const left = Math.min(Math.max(8, anchorRect.right - MENU_WIDTH), window.innerWidth - MENU_WIDTH - 8);
 
   const canRecordNow = recordingSupported && (isRecording || state === "live");
+  // Redundant once auto_record is on (that already covers the next session
+  // too) — mirrors the same subsumption CreatorOptionsMenu's caller applies
+  // server-side (PATCH /:id) when auto_record gets turned on.
+  const canRecordUpcoming = recordingSupported && state === "upcoming" && !creator.auto_record;
 
   return createPortal(
     <div
@@ -97,6 +103,18 @@ export default function CreatorOptionsMenu({
         >
           <span aria-hidden>{isRecording ? "⏹" : "⏺"}</span>
           {isRecording ? "Stop recording" : "Record now"}
+        </button>
+      )}
+
+      {canRecordUpcoming && (
+        <button
+          onClick={onToggleRecordNext}
+          className="flex w-full items-center justify-between px-3 py-1.5 text-left text-xs text-slate-200 hover:bg-base-800"
+        >
+          <span className="flex items-center gap-2">
+            <span aria-hidden>⏱</span> Record upcoming
+          </span>
+          {Boolean(creator.record_next) && <span className="text-red-400">Queued</span>}
         </button>
       )}
 

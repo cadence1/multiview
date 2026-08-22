@@ -12,6 +12,9 @@ export interface CreatorRow {
   avatar_url: string;
   created_at: string;
   auto_record: 0 | 1;
+  /** One-shot — "record the next time they go live", not "always" (auto_record) —
+   * consumed (cleared) the moment that recording actually starts. See poller.ts. */
+  record_next: 0 | 1;
 }
 
 // "stalled" is distinct from "failed": the recording process didn't error
@@ -59,8 +62,10 @@ db.exec(`
 // every startup (same as the CREATE TABLE IF NOT EXISTS above) — so check
 // first rather than let it fail on every run after the first.
 const creatorColumns = db.prepare(`PRAGMA table_info(creators)`).all() as { name: string }[];
-if (!creatorColumns.some((c) => c.name === "auto_record")) {
-  db.exec(`ALTER TABLE creators ADD COLUMN auto_record INTEGER NOT NULL DEFAULT 0;`);
+for (const column of ["auto_record", "record_next"]) {
+  if (!creatorColumns.some((c) => c.name === column)) {
+    db.exec(`ALTER TABLE creators ADD COLUMN ${column} INTEGER NOT NULL DEFAULT 0;`);
+  }
 }
 
 db.exec(`
@@ -102,6 +107,7 @@ const findByPlatformStmt = db.prepare(
   `SELECT * FROM creators WHERE platform = ? AND platform_id = ?`
 );
 const setAutoRecordStmt = db.prepare(`UPDATE creators SET auto_record = ? WHERE id = ?`);
+const setRecordNextStmt = db.prepare(`UPDATE creators SET record_next = ? WHERE id = ?`);
 
 const insertRecordingStmt = db.prepare(
   `INSERT INTO recordings (id, creator_id, platform, display_name, title, thumbnail_file_name, file_name, status, started_at, ended_at, file_size_bytes, error)
@@ -116,9 +122,10 @@ const deleteRecordingStmt = db.prepare(`DELETE FROM recordings WHERE id = ?`);
 
 export const statements = {
   insertCreator: {
-    // auto_record is deliberately excluded — it's not part of the INSERT
-    // statement at all, new creators always start with the column DEFAULT (0).
-    run: (row: Omit<CreatorRow, "auto_record">) =>
+    // auto_record/record_next are deliberately excluded — neither is part
+    // of the INSERT statement, new creators always start with the column
+    // DEFAULT (0) for both.
+    run: (row: Omit<CreatorRow, "auto_record" | "record_next">) =>
       insertCreatorStmt.run(
         row.id,
         row.platform,
@@ -144,6 +151,9 @@ export const statements = {
   },
   setAutoRecord: {
     run: (id: string, autoRecord: boolean) => setAutoRecordStmt.run(autoRecord ? 1 : 0, id),
+  },
+  setRecordNext: {
+    run: (id: string, recordNext: boolean) => setRecordNextStmt.run(recordNext ? 1 : 0, id),
   },
   insertRecording: {
     run: (

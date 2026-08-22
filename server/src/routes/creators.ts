@@ -153,15 +153,34 @@ creatorsRouter.patch("/:id", (req, res) => {
   const { id } = req.params;
   const existing = statements.getCreator.get(id);
   if (!existing) return res.status(404).json({ error: "not found" });
-  const { autoRecord } = req.body ?? {};
-  if (typeof autoRecord !== "boolean") {
-    return res.status(400).json({ error: "autoRecord (boolean) is required" });
+
+  const { autoRecord, recordNext } = req.body ?? {};
+  if (typeof autoRecord !== "boolean" && typeof recordNext !== "boolean") {
+    return res.status(400).json({ error: "autoRecord and/or recordNext (boolean) is required" });
   }
-  if (existing.platform === "rplay" && autoRecord) {
+  if (existing.platform === "rplay" && (autoRecord || recordNext)) {
     return res.status(400).json({ error: "RPlay recordings aren't supported" });
   }
-  statements.setAutoRecord.run(id, autoRecord);
-  res.json({ ...existing, auto_record: autoRecord ? 1 : 0 });
+
+  let autoRecordValue = existing.auto_record;
+  let recordNextValue = existing.record_next;
+  if (typeof autoRecord === "boolean") {
+    statements.setAutoRecord.run(id, autoRecord);
+    autoRecordValue = autoRecord ? 1 : 0;
+    // Always-record already covers every future session, including the
+    // very next one — a separate queued one-shot alongside it would just
+    // be redundant leftover state.
+    if (autoRecord && existing.record_next) {
+      statements.setRecordNext.run(id, false);
+      recordNextValue = 0;
+    }
+  }
+  if (typeof recordNext === "boolean") {
+    statements.setRecordNext.run(id, recordNext);
+    recordNextValue = recordNext ? 1 : 0;
+  }
+
+  res.json({ ...existing, auto_record: autoRecordValue, record_next: recordNextValue });
 });
 
 creatorsRouter.delete("/:id", (req, res) => {
