@@ -41,6 +41,12 @@ export interface RecordingRow {
   ended_at: string | null;
   file_size_bytes: number | null;
   error: string | null;
+  /** Where file_name/thumbnail_file_name actually live right now — "local"
+   * for the whole lifetime of an in-progress recording (yt-dlp/ffmpeg only
+   * ever write to local disk), flipped to "s3" after finishRecording's S3
+   * offload succeeds and the local copies are deleted. See recorder.ts and
+   * recordings/s3.ts. */
+  storage_location: "local" | "s3";
 }
 
 const dbPath = path.join(env.dataDir, "multiview.db");
@@ -98,6 +104,9 @@ for (const column of ["title", "thumbnail_file_name"]) {
     db.exec(`ALTER TABLE recordings ADD COLUMN ${column} TEXT;`);
   }
 }
+if (!recordingColumns.some((c) => c.name === "storage_location")) {
+  db.exec(`ALTER TABLE recordings ADD COLUMN storage_location TEXT NOT NULL DEFAULT 'local';`);
+}
 
 const insertCreatorStmt = db.prepare(
   `INSERT INTO creators (id, platform, platform_id, handle, display_name, avatar_url, created_at)
@@ -122,6 +131,7 @@ const finishRecordingStmt = db.prepare(
   `UPDATE recordings SET status = ?, ended_at = ?, file_name = ?, file_size_bytes = ?, error = ? WHERE id = ?`
 );
 const deleteRecordingStmt = db.prepare(`DELETE FROM recordings WHERE id = ?`);
+const setStorageLocationStmt = db.prepare(`UPDATE recordings SET storage_location = ? WHERE id = ?`);
 
 export const statements = {
   insertCreator: {
@@ -195,6 +205,9 @@ export const statements = {
   },
   deleteRecording: {
     run: (id: string) => deleteRecordingStmt.run(id),
+  },
+  setStorageLocation: {
+    run: (id: string, location: "local" | "s3") => setStorageLocationStmt.run(location, id),
   },
 };
 

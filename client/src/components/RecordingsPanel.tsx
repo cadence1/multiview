@@ -123,6 +123,11 @@ function RecordingRow({ recording }: { recording: Recording }) {
             <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase ${STATUS_STYLE[recording.status]}`}>
               {STATUS_LABEL[recording.status]}
             </span>
+            {recording.storage_location === "s3" && (
+              <span className="shrink-0 text-[10px]" title="Offloaded to S3 — local copy removed">
+                ☁️
+              </span>
+            )}
           </div>
           {recording.title && <p className="truncate text-xs text-slate-400">{recording.title}</p>}
           <p className="text-[11px] text-slate-500">

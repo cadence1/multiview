@@ -37,6 +37,8 @@ export interface Recording {
   file_size_bytes: number | null;
   error: string | null;
   isActive: boolean;
+  /** "s3" once a finished recording has been offloaded — see the server's recorder.ts. */
+  storage_location: "local" | "s3";
 }
 
 export interface CreatorStatus {

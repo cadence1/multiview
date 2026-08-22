@@ -55,4 +55,28 @@ export const env = {
   // is rejected outright rather than queued, since queueing something
   // time-sensitive just means missing the part spent waiting.
   recordingMaxConcurrent: Number(process.env.RECORDING_MAX_CONCURRENT ?? 4),
+
+  // Optional S3-compatible offload for finished recordings (Phase 2 of the
+  // recording feature — see recorder.ts's finishRecording). Recording
+  // itself is always local first regardless (yt-dlp/ffmpeg need a real
+  // filesystem path, and a live source can't be written straight into an
+  // object store) — this is only about what happens to the *finished* file.
+  // "Enabled" means bucket + both credentials are set; endpoint/region are
+  // meaningful either way (endpoint blank = talk to real AWS S3).
+  s3Endpoint: process.env.S3_ENDPOINT || "",
+  s3Region: process.env.S3_REGION || "us-east-1",
+  s3Bucket: process.env.S3_BUCKET || "",
+  s3AccessKeyId: process.env.S3_ACCESS_KEY_ID || "",
+  s3SecretAccessKey: process.env.S3_SECRET_ACCESS_KEY || "",
+  // Optional "subfolder" within the bucket — keys become `${prefix}${fileName}`.
+  s3KeyPrefix: process.env.S3_KEY_PREFIX || "",
+  // Path-style (bucket in the URL path, not a subdomain) is what
+  // self-hosted S3-compatible servers (MinIO, etc.) generally need — real
+  // AWS S3 supports it too, just deprecated there. Defaults to on whenever
+  // a custom endpoint is set (i.e. probably not real AWS), off otherwise;
+  // explicitly overridable either way.
+  s3ForcePathStyle:
+    process.env.S3_FORCE_PATH_STYLE !== undefined
+      ? process.env.S3_FORCE_PATH_STYLE === "true"
+      : Boolean(process.env.S3_ENDPOINT),
 };

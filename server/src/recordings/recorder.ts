@@ -4,6 +4,7 @@ import { env } from "../env.js";
 import { statements, type CreatorRow, type RecordingRow, type RecordingStatus } from "../db.js";
 import type { CreatorStatus } from "../platforms/types.js";
 import * as storage from "./storage.js";
+import * as s3 from "./s3.js";
 
 // Live recording via yt-dlp writing MPEG-TS (its own default for live
 // sources — resilient to interruption, unlike fragmented mp4), remuxed to a
@@ -248,6 +249,46 @@ async function finishRecording(rec: ActiveRecording, code: number | null, stderr
 
   statements.finishRecording.run(rec.recordingId, status, endedAt, fileName, fileSizeBytes, error);
   console.log(`[recorder] ${rec.recordingId} finished: status=${status} file=${fileName} size=${fileSizeBytes ?? 0}`);
+
+  // Same gate as the remux step above: nothing worth offloading without
+  // real content. Runs after finishRecording is already persisted, so a
+  // crash or slow upload here never leaves the DB row itself inconsistent
+  // — worst case is a recording that stays local when it should've moved,
+  // which is just the pre-Phase-2 behavior.
+  if (hasContent && status !== "failed" && s3.isEnabled()) {
+    await offloadToS3(rec.recordingId, fileName, rec.thumbnailFileName);
+  }
+}
+
+async function offloadToS3(recordingId: string, fileName: string, thumbnailFileName: string | null) {
+  const videoAbs = storage.absolutePath(fileName);
+  if (!videoAbs) return;
+  const videoUploaded = await s3.uploadFile(videoAbs, fileName);
+  if (!videoUploaded) {
+    console.warn(`[recorder] ${recordingId} S3 offload failed — keeping local copy`);
+    return;
+  }
+  // Flip the DB row *before* removing the local copy, not after — if the
+  // process were to crash in between, "DB says s3, local file still
+  // present too" is a harmless, self-cleaning state (the serving routes
+  // check local disk first and only fall back to S3 — see recordings.ts),
+  // whereas the reverse order risks "DB says local, but the file is
+  // already gone" if the crash lands between the delete and this write.
+  statements.setStorageLocation.run(recordingId, "s3");
+
+  // Best-effort and independent of the video's own success — a missing
+  // preview image isn't worth losing the disk-space win over, same
+  // reasoning as downloadThumbnail's own failure handling elsewhere. Same
+  // local-first fallback in the serving routes means it's fine for this to
+  // end up local while the video ends up in S3.
+  if (thumbnailFileName) {
+    const thumbAbs = storage.absolutePath(thumbnailFileName);
+    if (thumbAbs && (await s3.uploadFile(thumbAbs, thumbnailFileName))) {
+      await storage.deleteFile(thumbnailFileName);
+    }
+  }
+  await storage.deleteFile(fileName);
+  console.log(`[recorder] ${recordingId} offloaded to S3, local copy removed`);
 }
 
 export interface StartRecordingResult {
@@ -300,6 +341,7 @@ export async function startRecording(creator: CreatorRow, status: CreatorStatus)
     ended_at: null,
     file_size_bytes: null,
     error: null,
+    storage_location: "local", // matches the column's own DEFAULT — insertRecording doesn't write this column at all
   };
   statements.insertRecording.run(row);
 
@@ -366,8 +408,16 @@ export async function deleteRecording(recordingId: string): Promise<{ ok: boolea
   }
   const row = statements.getRecording.get(recordingId);
   if (!row) return { ok: false, error: "not found" };
+  // Best-effort against both local disk and S3 rather than branching on
+  // storage_location — a missing file/object either way is already a no-op
+  // in both deleteFile and deleteObject, and the video/thumbnail can end up
+  // on different storage independently (offloadToS3 keeps the thumbnail
+  // local if only its own upload failed), so a single flag isn't reliable
+  // enough to pick just one to check.
   await storage.deleteFile(row.file_name);
   await storage.deleteFile(row.thumbnail_file_name);
+  await s3.deleteObject(row.file_name);
+  if (row.thumbnail_file_name) await s3.deleteObject(row.thumbnail_file_name);
   statements.deleteRecording.run(recordingId);
   return { ok: true };
 }

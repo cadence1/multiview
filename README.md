@@ -140,12 +140,24 @@ just fails with a clear error rather than breaking anything else.
   building this that a stuck process can simply not act on the polite
   signal, so this is a real backstop, not a nicety.
 - No retention policy — recordings accumulate until you delete them
-  yourself. `RECORDING_MIN_FREE_GB` (default 2) just refuses to *start* a
-  new one below that much free disk space, as a safety net against ever
-  filling the disk completely.
-- `RECORDINGS_DIR` defaults to `DATA_DIR/recordings`; point it at an
-  already-mounted network share (SMB, etc.) with no other changes needed —
+  yourself (or move off local disk entirely via `S3_BUCKET`, below).
+- `RECORDINGS_DIR` (default `DATA_DIR/recordings`) is where a recording is
+  always *made* — a live stream can only ever be written to a real
+  filesystem path, never straight into an object store — so this setting
+  matters regardless of whether S3 offload is on. Point it at an
+  already-mounted network share (SMB, etc.) with no other changes needed:
   from the app's perspective that's indistinguishable from local disk.
+- Optional **S3 offload**: set `S3_BUCKET` + `S3_ACCESS_KEY_ID` +
+  `S3_SECRET_ACCESS_KEY` (plus `S3_ENDPOINT` for anything that isn't real
+  AWS — self-hosted MinIO, R2, B2, etc.) and a finished recording is
+  uploaded to the bucket, with the local copy deleted once that succeeds
+  (shown as ☁️ in the list). Play/download keep working exactly the same
+  afterward — the server proxies them from the bucket rather than handing
+  back a direct link, so it works even when the bucket endpoint (e.g. a
+  MinIO instance only reachable from the server's own network) isn't
+  reachable from your browser. A failed upload just leaves the recording
+  local, same as if S3 weren't configured at all. See `.env.example` for
+  the full list of `S3_*` settings.
 
 ## Notes & limitations
 

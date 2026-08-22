@@ -3,6 +3,7 @@ import { statements } from "../db.js";
 import { statusCache } from "../cache.js";
 import * as recorder from "../recordings/recorder.js";
 import * as storage from "../recordings/storage.js";
+import * as s3 from "../recordings/s3.js";
 
 export const recordingsRouter = Router();
 
@@ -38,22 +39,39 @@ recordingsRouter.post("/:id/stop", (req, res) => {
   res.status(204).end();
 });
 
-recordingsRouter.get("/:id/file", (req, res) => {
+// Local disk is always checked first, S3 only as a fallback — not just an
+// optimization. The video and thumbnail can genuinely end up on different
+// storage independently (a thumbnail upload can fail while the video's own
+// succeeds — see recorder.ts's offloadToS3), so storage_location alone
+// isn't a reliable enough signal for which one actually holds a given file;
+// checking local existence directly is.
+
+recordingsRouter.get("/:id/file", async (req, res) => {
   const row = recorder.getRecording(req.params.id);
   if (!row) return res.status(404).end();
   const abs = storage.absolutePath(row.file_name);
-  if (!abs || !storage.existsSync(row.file_name)) return res.status(404).end();
-  // sendFile natively supports Range requests, needed both for seeking a
-  // finished recording and for progressively downloading a large one.
-  res.sendFile(abs);
+  if (abs && storage.existsSync(row.file_name)) {
+    // sendFile natively supports Range requests, needed both for seeking a
+    // finished recording and for progressively downloading a large one.
+    return res.sendFile(abs);
+  }
+  if (row.storage_location === "s3") {
+    return s3.streamObject(row.file_name, req.headers.range, res);
+  }
+  res.status(404).end();
 });
 
-recordingsRouter.get("/:id/thumbnail", (req, res) => {
+recordingsRouter.get("/:id/thumbnail", async (req, res) => {
   const row = recorder.getRecording(req.params.id);
   if (!row?.thumbnail_file_name) return res.status(404).end();
   const abs = storage.absolutePath(row.thumbnail_file_name);
-  if (!abs || !storage.existsSync(row.thumbnail_file_name)) return res.status(404).end();
-  res.sendFile(abs);
+  if (abs && storage.existsSync(row.thumbnail_file_name)) {
+    return res.sendFile(abs);
+  }
+  if (row.storage_location === "s3") {
+    return s3.streamObject(row.thumbnail_file_name, undefined, res);
+  }
+  res.status(404).end();
 });
 
 recordingsRouter.delete("/:id", async (req, res) => {
