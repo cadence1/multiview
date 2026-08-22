@@ -108,6 +108,8 @@ interface MultiviewState {
   downloadVideo: (url: string) => Promise<void>;
   stopRecording: (id: string) => Promise<void>;
   deleteRecording: (id: string) => Promise<void>;
+  addRecordingTag: (id: string, name: string) => Promise<void>;
+  removeRecordingTag: (id: string, name: string) => Promise<void>;
   refreshStorageStats: () => Promise<void>;
 }
 
@@ -368,6 +370,28 @@ export const useStore = create<MultiviewState>((set, get) => ({
     // is the one recording action where the disk numbers actually change,
     // so refresh proactively rather than waiting on the panel's own timer.
     get().refreshStorageStats().catch(() => {});
+  },
+
+  addRecordingTag: async (id, name) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    await api.addRecordingTag(id, trimmed);
+    set((state) => ({
+      recordings: state.recordings.map((r) =>
+        r.id === id && !r.tags.some((t) => t.toLowerCase() === trimmed.toLowerCase())
+          ? { ...r, tags: [...r.tags, trimmed] }
+          : r
+      ),
+    }));
+  },
+
+  removeRecordingTag: async (id, name) => {
+    await api.removeRecordingTag(id, name);
+    set((state) => ({
+      recordings: state.recordings.map((r) =>
+        r.id === id ? { ...r, tags: r.tags.filter((t) => t.toLowerCase() !== name.toLowerCase()) } : r
+      ),
+    }));
   },
 
   refreshStorageStats: async () => {

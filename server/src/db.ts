@@ -1,5 +1,6 @@
 import { DatabaseSync } from "node:sqlite";
 import path from "node:path";
+import { nanoid } from "nanoid";
 import { env } from "./env.js";
 import type { Platform } from "./platforms/types.js";
 
@@ -121,6 +122,28 @@ if (!recordingColumns.some((c) => c.name === "storage_location")) {
   db.exec(`ALTER TABLE recordings ADD COLUMN storage_location TEXT NOT NULL DEFAULT 'local';`);
 }
 
+// Phase 4: tagging. A real many-to-many (not a comma-joined column on
+// recordings) so a tag has one canonical identity regardless of casing
+// (COLLATE NOCASE on the unique constraint — "ASMR" and "asmr" are the same
+// tag) and multiple recordings can share it without duplicating the text.
+// No FOREIGN KEY constraints, matching the rest of this schema's style
+// (e.g. recordings.creator_id already outlives a deleted creator by
+// design) — cleanup on delete is handled explicitly in code instead (see
+// deleteAllForRecording, called from recorder.ts's deleteRecording).
+db.exec(`
+  CREATE TABLE IF NOT EXISTS tags (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE COLLATE NOCASE
+  );
+`);
+db.exec(`
+  CREATE TABLE IF NOT EXISTS recording_tags (
+    recording_id TEXT NOT NULL,
+    tag_id TEXT NOT NULL,
+    PRIMARY KEY (recording_id, tag_id)
+  );
+`);
+
 const insertCreatorStmt = db.prepare(
   `INSERT INTO creators (id, platform, platform_id, handle, display_name, avatar_url, created_at)
    VALUES (?, ?, ?, ?, ?, ?, ?)`
@@ -145,6 +168,30 @@ const finishRecordingStmt = db.prepare(
 );
 const deleteRecordingStmt = db.prepare(`DELETE FROM recordings WHERE id = ?`);
 const setStorageLocationStmt = db.prepare(`UPDATE recordings SET storage_location = ? WHERE id = ?`);
+
+const insertTagStmt = db.prepare(`INSERT OR IGNORE INTO tags (id, name) VALUES (?, ?)`);
+const findTagByNameStmt = db.prepare(`SELECT id, name FROM tags WHERE name = ? COLLATE NOCASE`);
+const addRecordingTagStmt = db.prepare(`INSERT OR IGNORE INTO recording_tags (recording_id, tag_id) VALUES (?, ?)`);
+const removeRecordingTagStmt = db.prepare(
+  `DELETE FROM recording_tags WHERE recording_id = ? AND tag_id = (SELECT id FROM tags WHERE name = ? COLLATE NOCASE)`
+);
+const deleteRecordingTagsForRecordingStmt = db.prepare(`DELETE FROM recording_tags WHERE recording_id = ?`);
+const listAllRecordingTagsStmt = db.prepare(
+  `SELECT rt.recording_id AS recording_id, t.name AS name
+   FROM recording_tags rt JOIN tags t ON t.id = rt.tag_id
+   ORDER BY t.name COLLATE NOCASE ASC`
+);
+
+/** Resolves a tag name to its canonical row id, creating it if this exact
+ * name (case-insensitively) hasn't been seen before. Not exposed directly —
+ * only ever used internally by statements.tags.addToRecording, since a
+ * caller never has a legitimate reason to just create an unattached tag. */
+function getOrCreateTagId(name: string): string {
+  const trimmed = name.trim();
+  insertTagStmt.run(nanoid(), trimmed); // no-op (IGNORE) if this name already exists, case-insensitively
+  const row = findTagByNameStmt.get(trimmed) as { id: string; name: string } | undefined;
+  return row!.id; // guaranteed to exist now, either just-inserted or pre-existing
+}
 
 export const statements = {
   insertCreator: {
@@ -221,6 +268,35 @@ export const statements = {
   },
   setStorageLocation: {
     run: (id: string, location: "local" | "s3") => setStorageLocationStmt.run(location, id),
+  },
+  tags: {
+    /** Idempotent — adding a tag a recording already has (even in
+     * different casing) is a no-op, not an error. */
+    addToRecording: (recordingId: string, name: string) => {
+      const trimmed = name.trim();
+      if (!trimmed) return;
+      addRecordingTagStmt.run(recordingId, getOrCreateTagId(trimmed));
+    },
+    removeFromRecording: (recordingId: string, name: string) => {
+      removeRecordingTagStmt.run(recordingId, name.trim());
+    },
+    deleteAllForRecording: (recordingId: string) => {
+      deleteRecordingTagsForRecordingStmt.run(recordingId);
+    },
+    /** Every recording->tag-name pair in the whole database, in one query
+     * — grouped client-side (recorder.ts's listRecordings) rather than one
+     * query per recording. Fine at this app's scale, and avoids an N+1
+     * that would only get worse as recordings accumulate. */
+    listAllByRecording: (): Map<string, string[]> => {
+      const rows = listAllRecordingTagsStmt.all() as { recording_id: string; name: string }[];
+      const map = new Map<string, string[]>();
+      for (const r of rows) {
+        const list = map.get(r.recording_id) ?? [];
+        list.push(r.name);
+        map.set(r.recording_id, list);
+      }
+      return map;
+    },
   },
 };
 

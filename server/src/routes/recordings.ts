@@ -93,3 +93,24 @@ recordingsRouter.delete("/:id", async (req, res) => {
   if (!result.ok) return res.status(409).json({ error: result.error });
   res.status(204).end();
 });
+
+// Phase 4: tagging. Most tags on a recording come pre-seeded automatically
+// (see recorder.ts's applyAutoTags) — these two just let a user add their
+// own on top or remove one they don't want, auto-generated or not.
+recordingsRouter.post("/:id/tags", (req, res) => {
+  const { name } = req.body ?? {};
+  if (typeof name !== "string" || !name.trim()) {
+    return res.status(400).json({ error: "name is required" });
+  }
+  const result = recorder.addTag(req.params.id, name);
+  if (!result.ok) return res.status(404).json({ error: result.error });
+  res.status(204).end();
+});
+
+// Tag name in the path, not the body — DELETE conventionally carries no
+// body, and req.params already URL-decodes it for us.
+recordingsRouter.delete("/:id/tags/:tag", (req, res) => {
+  const result = recorder.removeTag(req.params.id, req.params.tag);
+  if (!result.ok) return res.status(404).json({ error: result.error });
+  res.status(204).end();
+});

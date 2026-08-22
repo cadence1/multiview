@@ -45,6 +45,10 @@ export interface Recording {
   isActive: boolean;
   /** "s3" once a finished recording has been offloaded — see the server's recorder.ts. */
   storage_location: "local" | "s3";
+  /** Auto-seeded (creator/uploader name, recording date, video date if
+   * known and different, bracketed segments in the title/name) plus
+   * anything added manually — see the server's recordings/tags.ts. */
+  tags: string[];
 }
 
 export interface CreatorStatus {

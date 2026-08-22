@@ -168,6 +168,16 @@ just fails with a clear error rather than breaking anything else.
   cap, disk-space safety net, and S3 offload as live recordings. Shows up
   in the same list marked **📥 Downloaded**, and works with **Watch in
   Multiview** the same as any other recording.
+- **Tags**, on `/saved`, are seeded automatically the moment a recording is
+  created (no need to wait for it to finish) — the creator/uploader's name,
+  the date recorded, the video's own original publish date if that's known
+  and different (only ever known for a manual download; a live capture's
+  "recorded" and "aired" dates are the same moment), and any `[bracketed]`
+  segment found in either the title or the creator/uploader name (so a
+  title like `Stream [ASMR]` or a creator named `Foo [VTuber]` both pick up
+  their own tag automatically). Click any tag to filter the list down to
+  it, click it again (or **Clear**) to go back to everything; hover a tag
+  to remove it, or use **+ tag** to add your own on top.
 
 ## Notes & limitations
 

@@ -58,4 +58,11 @@ export const api = {
     }),
   deleteRecording: (id: string) => request<void>(`/recordings/${id}`, { method: "DELETE" }),
   getRecordingStorage: () => request<VolumeStats>("/recordings/storage"),
+  addRecordingTag: (id: string, name: string) =>
+    request<void>(`/recordings/${id}/tags`, {
+      method: "POST",
+      body: JSON.stringify({ name }),
+    }),
+  removeRecordingTag: (id: string, name: string) =>
+    request<void>(`/recordings/${id}/tags/${encodeURIComponent(name)}`, { method: "DELETE" }),
 };

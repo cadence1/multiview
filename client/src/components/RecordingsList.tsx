@@ -59,7 +59,76 @@ const STATUS_LABEL: Record<RecordingStatus, string> = {
   failed: "Failed",
 };
 
-function RecordingRow({ recording }: { recording: Recording }) {
+/**
+ * Phase 4: tagging. Most tags a recording has are auto-seeded server-side
+ * the moment it's created (creator/uploader name, recording date, video
+ * date if known and different, bracketed segments from the title/name —
+ * see the server's recordings/tags.ts) — this is just the display/edit
+ * surface: click a tag to filter the list by it (onTagClick, threaded down
+ * from SavedPage's filter bar — absent in the slide-out panel, which has
+ * no filter to drive), an × on hover to remove one, and a small inline
+ * "+ tag" control to add your own on top.
+ */
+function TagChips({ recording, onTagClick }: { recording: Recording; onTagClick?: (tag: string) => void }) {
+  const addRecordingTag = useStore((s) => s.addRecordingTag);
+  const removeRecordingTag = useStore((s) => s.removeRecordingTag);
+  const [adding, setAdding] = useState(false);
+  const [newTag, setNewTag] = useState("");
+
+  function handleAdd(e: React.FormEvent) {
+    e.preventDefault();
+    const trimmed = newTag.trim();
+    setNewTag("");
+    setAdding(false);
+    if (!trimmed) return;
+    addRecordingTag(recording.id, trimmed).catch(() => {}); // best-effort — not worth a whole error banner over
+  }
+
+  return (
+    <div className="mt-1 flex flex-wrap items-center gap-1">
+      {recording.tags.map((tag) => (
+        <span
+          key={tag}
+          className="group inline-flex items-center gap-1 rounded-full bg-base-800 px-2 py-0.5 text-[10px] text-slate-300"
+        >
+          <button type="button" onClick={() => onTagClick?.(tag)} className="hover:text-indigo-300" title={`Filter by "${tag}"`}>
+            {tag}
+          </button>
+          <button
+            type="button"
+            onClick={() => removeRecordingTag(recording.id, tag).catch(() => {})}
+            className="text-slate-500 opacity-0 hover:text-red-400 group-hover:opacity-100"
+            title="Remove tag"
+          >
+            ×
+          </button>
+        </span>
+      ))}
+      {adding ? (
+        <form onSubmit={handleAdd} className="inline-flex">
+          <input
+            autoFocus
+            value={newTag}
+            onChange={(e) => setNewTag(e.target.value)}
+            onBlur={() => !newTag.trim() && setAdding(false)}
+            placeholder="tag…"
+            className="w-20 rounded-full border border-base-600 bg-base-900 px-2 py-0.5 text-[10px] text-slate-200 focus:border-indigo-500 focus:outline-none"
+          />
+        </form>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setAdding(true)}
+          className="rounded-full border border-dashed border-base-600 px-2 py-0.5 text-[10px] text-slate-500 hover:border-slate-400 hover:text-slate-300"
+        >
+          + tag
+        </button>
+      )}
+    </div>
+  );
+}
+
+function RecordingRow({ recording, onTagClick }: { recording: Recording; onTagClick?: (tag: string) => void }) {
   const stopRecording = useStore((s) => s.stopRecording);
   const deleteRecording = useStore((s) => s.deleteRecording);
   const inGrid = useStore((s) => s.gridRecordingIds.includes(recording.id));
@@ -151,6 +220,8 @@ function RecordingRow({ recording }: { recording: Recording }) {
             </p>
           )}
 
+          <TagChips recording={recording} onTagClick={onTagClick} />
+
           <div className="mt-1 flex items-center gap-2 text-[11px]">
             {recording.status === "recording" ? (
               <button
@@ -198,26 +269,42 @@ function RecordingRow({ recording }: { recording: Recording }) {
   );
 }
 
+interface RecordingsListProps {
+  /** Only recordings carrying this tag are shown — SavedPage's filter bar
+   * drives this; the slide-out panel omits it and just shows everything,
+   * it has no filter UI of its own. */
+  filterTag?: string;
+  /** Bubbled up from clicking a tag chip on any row, so the same click
+   * either sets or (via SavedPage) is a no-op depending on whether the
+   * caller actually wired up a filter bar. */
+  onTagClick?: (tag: string) => void;
+}
+
 /** The actual recordings list — no outer chrome (header/close button) of
  * its own, so callers (SavedPage today; the old slide-out RecordingsPanel
  * before it) supply whatever page/panel frame makes sense for them. */
-export default function RecordingsList() {
+export default function RecordingsList({ filterTag, onTagClick }: RecordingsListProps) {
   const recordings = useStore((s) => s.recordings);
+  const visible = filterTag ? recordings.filter((r) => r.tags.includes(filterTag)) : recordings;
+
+  if (recordings.length === 0) {
+    return (
+      <p className="mt-4 px-2 text-xs text-slate-500">
+        No recordings yet. Click ⏺ on a live creator in the sidebar to start one, or 📼 to always record them
+        when live.
+      </p>
+    );
+  }
+
+  if (visible.length === 0) {
+    return <p className="mt-4 px-2 text-xs text-slate-500">No recordings tagged "{filterTag}".</p>;
+  }
 
   return (
-    <>
-      {recordings.length === 0 ? (
-        <p className="mt-4 px-2 text-xs text-slate-500">
-          No recordings yet. Click ⏺ on a live creator in the sidebar to start one, or 📼 to always record them
-          when live.
-        </p>
-      ) : (
-        <div className="space-y-2">
-          {recordings.map((r) => (
-            <RecordingRow key={r.id} recording={r} />
-          ))}
-        </div>
-      )}
-    </>
+    <div className="space-y-2">
+      {visible.map((r) => (
+        <RecordingRow key={r.id} recording={r} onTagClick={onTagClick} />
+      ))}
+    </div>
   );
 }

@@ -5,6 +5,7 @@ import { statements, type CreatorRow, type RecordingRow, type RecordingStatus } 
 import type { CreatorStatus } from "../platforms/types.js";
 import * as storage from "./storage.js";
 import * as s3 from "./s3.js";
+import * as tags from "./tags.js";
 
 // Live recording via yt-dlp writing MPEG-TS (its own default for live
 // sources — resilient to interruption, unlike fragmented mp4), remuxed to a
@@ -350,6 +351,10 @@ export async function startRecording(creator: CreatorRow, status: CreatorStatus)
     storage_location: "local", // matches the column's own DEFAULT — insertRecording doesn't write this column at all
   };
   statements.insertRecording.run(row);
+  // Right away, not after the file finishes — display_name/title/started_at
+  // are all already known, and it means the tags show up in the UI even
+  // while status is still "recording".
+  tags.applyAutoTags(recordingId, { displayName: creator.display_name, title: row.title, startedAt });
 
   const child = spawn("yt-dlp", [sourceUrl, "-o", outputTemplate, "--no-playlist", "--no-part", "--newline"], {
     stdio: ["ignore", "ignore", "pipe"],
@@ -427,6 +432,20 @@ interface VideoMetadata {
   displayName: string;
   thumbnailUrl: string | undefined;
   platform: string;
+  /** The video's own original publish/air date (YYYY-MM-DD), from yt-dlp's
+   * upload_date (YYYYMMDD) — distinct from when *we* downloaded it. Used
+   * for the "video date" auto-tag, separate from the "recording date" one
+   * every recording gets — see tags.ts. */
+  videoDate: string | undefined;
+}
+
+/** yt-dlp's upload_date is "YYYYMMDD" with no separators — reshape to the
+ * same YYYY-MM-DD form the "recording date" tag already uses, so the two
+ * are directly comparable (and dedupe correctly when they happen to
+ * match). */
+function formatUploadDate(uploadDate: unknown): string | undefined {
+  if (typeof uploadDate !== "string" || !/^\d{8}$/.test(uploadDate)) return undefined;
+  return `${uploadDate.slice(0, 4)}-${uploadDate.slice(4, 6)}-${uploadDate.slice(6, 8)}`;
 }
 
 /** A quick metadata-only pass (--skip-download) before the real download —
@@ -470,6 +489,7 @@ function fetchVideoMetadata(url: string): Promise<VideoMetadata | null> {
                 : platform,
           thumbnailUrl: typeof info.thumbnail === "string" ? info.thumbnail : undefined,
           platform,
+          videoDate: formatUploadDate(info.upload_date),
         });
       } catch {
         resolve(null);
@@ -530,6 +550,12 @@ export async function downloadVideo(url: string): Promise<StartRecordingResult> 
     storage_location: "local",
   };
   statements.insertRecording.run(row);
+  tags.applyAutoTags(recordingId, {
+    displayName: metadata.displayName,
+    title: metadata.title,
+    startedAt,
+    videoDate: metadata.videoDate,
+  });
 
   const child = spawn(
     "yt-dlp",
@@ -623,14 +649,34 @@ export async function deleteRecording(recordingId: string): Promise<{ ok: boolea
   await storage.deleteFile(row.thumbnail_file_name);
   await s3.deleteObject(row.file_name);
   if (row.thumbnail_file_name) await s3.deleteObject(row.thumbnail_file_name);
+  statements.tags.deleteAllForRecording(recordingId);
   statements.deleteRecording.run(recordingId);
   return { ok: true };
 }
 
-export function listRecordings(): (RecordingRow & { isActive: boolean })[] {
-  return statements.listRecordings.all().map((r) => ({ ...r, isActive: active.has(r.id) }));
+export function listRecordings(): (RecordingRow & { isActive: boolean; tags: string[] })[] {
+  const tagsByRecording = statements.tags.listAllByRecording();
+  return statements.listRecordings.all().map((r) => ({
+    ...r,
+    isActive: active.has(r.id),
+    tags: tagsByRecording.get(r.id) ?? [],
+  }));
 }
 
 export function getRecording(recordingId: string): RecordingRow | undefined {
   return statements.getRecording.get(recordingId);
+}
+
+export function addTag(recordingId: string, name: string): { ok: boolean; error?: string } {
+  if (!statements.getRecording.get(recordingId)) return { ok: false, error: "not found" };
+  const trimmed = name.trim();
+  if (!trimmed) return { ok: false, error: "tag name is required" };
+  statements.tags.addToRecording(recordingId, trimmed);
+  return { ok: true };
+}
+
+export function removeTag(recordingId: string, name: string): { ok: boolean; error?: string } {
+  if (!statements.getRecording.get(recordingId)) return { ok: false, error: "not found" };
+  statements.tags.removeFromRecording(recordingId, name);
+  return { ok: true };
 }
