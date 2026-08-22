@@ -11,6 +11,7 @@ interface Props {
   /** Effective volume 0-100 (master × this creator's saved volume). */
   volume: number;
   onRemove: () => void;
+  isRecording: boolean;
 }
 
 function placeholderText(creator: Creator, status?: CreatorStatus): string {
@@ -22,7 +23,7 @@ function placeholderText(creator: Creator, status?: CreatorStatus): string {
   return `${creator.display_name} is offline`;
 }
 
-export default function PlayerCell({ creator, status, volume, onRemove }: Props) {
+export default function PlayerCell({ creator, status, volume, onRemove, isRecording }: Props) {
   const twitchParent = useMemo(() => window.location.hostname || "localhost", []);
   const isLive = status?.state === "live" && Boolean(status.embedId);
 
@@ -147,6 +148,14 @@ export default function PlayerCell({ creator, status, volume, onRemove }: Props)
           <span className="truncate text-xs font-medium text-white drop-shadow">
             {creator.display_name}
           </span>
+          {isRecording && (
+            <span
+              className="inline-flex shrink-0 items-center gap-1 rounded bg-red-600/90 px-1.5 py-0.5 text-[10px] font-bold uppercase text-white"
+              title="Being recorded"
+            >
+              <span className="h-1.5 w-1.5 rounded-full bg-white" /> Rec
+            </span>
+          )}
         </div>
         <button
           onClick={onRemove}

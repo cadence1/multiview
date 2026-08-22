@@ -52,12 +52,22 @@ export default function Sidebar({ onAddCreator, onClose }: Props) {
   const gridIds = useStore((s) => s.gridIds);
   const autoAddIds = useStore((s) => s.autoAddIds);
   const creatorVolumes = useStore((s) => s.creatorVolumes);
+  const recordings = useStore((s) => s.recordings);
   const toggleGrid = useStore((s) => s.toggleGrid);
   const toggleAutoAdd = useStore((s) => s.toggleAutoAdd);
   const setAutoAdd = useStore((s) => s.setAutoAdd);
   const setCreatorVolume = useStore((s) => s.setCreatorVolume);
   const removeCreators = useStore((s) => s.removeCreators);
   const importCreators = useStore((s) => s.importCreators);
+  const toggleAutoRecord = useStore((s) => s.toggleAutoRecord);
+  const startRecording = useStore((s) => s.startRecording);
+  const stopRecording = useStore((s) => s.stopRecording);
+
+  const activeRecordingByCreator = useMemo(() => {
+    const map = new Map<string, string>(); // creatorId -> recordingId
+    for (const r of recordings) if (r.isActive) map.set(r.creator_id, r.id);
+    return map;
+  }, [recordings]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -278,20 +288,33 @@ export default function Sidebar({ onAddCreator, onClose }: Props) {
                   {group.label} · {group.items.length}
                 </div>
                 <div className="space-y-0.5">
-                  {group.items.map((creator) => (
-                    <CreatorRow
-                      key={creator.id}
-                      creator={creator}
-                      status={statuses[creator.id]}
-                      inGrid={gridIds.includes(creator.id)}
-                      autoAdd={autoAddIds.includes(stableKey(creator))}
-                      onToggleGrid={() => toggleGrid(creator.id)}
-                      onToggleAutoAdd={() => toggleAutoAdd(creator)}
-                      selecting={selecting}
-                      selected={selectedIds.has(creator.id)}
-                      onToggleSelect={() => toggleSelected(creator.id)}
-                    />
-                  ))}
+                  {group.items.map((creator) => {
+                    const activeRecordingId = activeRecordingByCreator.get(creator.id);
+                    return (
+                      <CreatorRow
+                        key={creator.id}
+                        creator={creator}
+                        status={statuses[creator.id]}
+                        inGrid={gridIds.includes(creator.id)}
+                        autoAdd={autoAddIds.includes(stableKey(creator))}
+                        onToggleGrid={() => toggleGrid(creator.id)}
+                        onToggleAutoAdd={() => toggleAutoAdd(creator)}
+                        selecting={selecting}
+                        selected={selectedIds.has(creator.id)}
+                        onToggleSelect={() => toggleSelected(creator.id)}
+                        recordingSupported={creator.platform !== "rplay"}
+                        isRecording={Boolean(activeRecordingId)}
+                        onToggleRecording={() => {
+                          if (activeRecordingId) {
+                            stopRecording(activeRecordingId).catch((err) => showNotice(err.message));
+                          } else {
+                            startRecording(creator.id).catch((err) => showNotice(err.message));
+                          }
+                        }}
+                        onToggleAutoRecord={() => toggleAutoRecord(creator).catch((err) => showNotice(err.message))}
+                      />
+                    );
+                  })}
                 </div>
               </div>
             )

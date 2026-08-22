@@ -9,6 +9,25 @@ export interface Creator {
   display_name: string;
   avatar_url: string;
   created_at: string;
+  auto_record: 0 | 1;
+}
+
+export type RecordingStatus = "recording" | "completed" | "stalled" | "failed";
+
+export interface Recording {
+  id: string;
+  creator_id: string;
+  platform: Platform;
+  display_name: string;
+  title: string | null;
+  thumbnail_file_name: string | null;
+  file_name: string;
+  status: RecordingStatus;
+  started_at: string;
+  ended_at: string | null;
+  file_size_bytes: number | null;
+  error: string | null;
+  isActive: boolean;
 }
 
 export interface CreatorStatus {

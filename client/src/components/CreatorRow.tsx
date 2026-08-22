@@ -15,6 +15,11 @@ interface Props {
   selecting: boolean;
   selected: boolean;
   onToggleSelect: () => void;
+  /** RPlay isn't supported — recording controls are hidden entirely for it, not just disabled. */
+  recordingSupported: boolean;
+  isRecording: boolean;
+  onToggleRecording: () => void;
+  onToggleAutoRecord: () => void;
 }
 
 export default function CreatorRow({
@@ -27,6 +32,10 @@ export default function CreatorRow({
   selecting,
   selected,
   onToggleSelect,
+  recordingSupported,
+  isRecording,
+  onToggleRecording,
+  onToggleAutoRecord,
 }: Props) {
   const state = status?.state ?? "offline";
   // Upcoming creators can be toggled into the grid too (as a placeholder
@@ -81,10 +90,10 @@ export default function CreatorRow({
           <img
             src={creator.avatar_url}
             alt=""
-            className="h-8 w-8 rounded-full object-cover"
+            className={`h-8 w-8 rounded-full object-cover ${isRecording ? "ring-2 ring-red-500" : ""}`}
           />
         ) : (
-          <div className="h-8 w-8 rounded-full bg-base-700" />
+          <div className={`h-8 w-8 rounded-full bg-base-700 ${isRecording ? "ring-2 ring-red-500" : ""}`} />
         )}
         {state === "live" && (
           <span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full bg-red-500 ring-2 ring-base-900" />
@@ -138,6 +147,44 @@ export default function CreatorRow({
           }
         >
           📌
+        </button>
+      )}
+
+      {!selecting && recordingSupported && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleAutoRecord();
+          }}
+          className={`shrink-0 rounded px-1.5 py-0.5 text-xs transition-opacity ${
+            creator.auto_record
+              ? "text-red-400 opacity-100 hover:bg-base-700 hover:text-red-300"
+              : "text-slate-500 opacity-0 hover:bg-base-700 hover:text-slate-200 group-hover:opacity-100"
+          }`}
+          title={
+            creator.auto_record
+              ? "Always records when live, saved when it ends (click to turn off)"
+              : "Always record when live, save when it ends"
+          }
+        >
+          📼
+        </button>
+      )}
+
+      {!selecting && recordingSupported && (isRecording || state === "live") && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleRecording();
+          }}
+          className={`shrink-0 rounded px-1.5 py-0.5 text-xs ${
+            isRecording
+              ? "bg-red-600/80 text-white hover:bg-red-500"
+              : "text-slate-500 hover:bg-base-700 hover:text-slate-200"
+          }`}
+          title={isRecording ? "Stop recording" : "Start recording now"}
+        >
+          {isRecording ? "⏹" : "⏺"}
         </button>
       )}
     </div>

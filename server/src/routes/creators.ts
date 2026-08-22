@@ -149,6 +149,21 @@ creatorsRouter.post("/import", async (req, res) => {
   res.json({ imported, skipped, errors });
 });
 
+creatorsRouter.patch("/:id", (req, res) => {
+  const { id } = req.params;
+  const existing = statements.getCreator.get(id);
+  if (!existing) return res.status(404).json({ error: "not found" });
+  const { autoRecord } = req.body ?? {};
+  if (typeof autoRecord !== "boolean") {
+    return res.status(400).json({ error: "autoRecord (boolean) is required" });
+  }
+  if (existing.platform === "rplay" && autoRecord) {
+    return res.status(400).json({ error: "RPlay recordings aren't supported" });
+  }
+  statements.setAutoRecord.run(id, autoRecord);
+  res.json({ ...existing, auto_record: autoRecord ? 1 : 0 });
+});
+
 creatorsRouter.delete("/:id", (req, res) => {
   const { id } = req.params;
   const existing = statements.getCreator.get(id);

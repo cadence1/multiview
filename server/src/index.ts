@@ -7,7 +7,9 @@ import { env } from "./env.js";
 import "./db.js";
 import { creatorsRouter } from "./routes/creators.js";
 import { statusRouter } from "./routes/status.js";
+import { recordingsRouter } from "./routes/recordings.js";
 import { startPoller } from "./poller.js";
+import { checkWritable } from "./recordings/storage.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -17,6 +19,7 @@ app.use(express.json());
 
 app.use("/api/creators", creatorsRouter);
 app.use("/api/status", statusRouter);
+app.use("/api/recordings", recordingsRouter);
 
 app.get("/api/health", (_req, res) => {
   res.json({ ok: true, pollIntervalSeconds: env.pollIntervalSeconds });
@@ -33,6 +36,14 @@ if (fs.existsSync(publicDir)) {
 }
 
 startPoller();
+
+checkWritable().then((result) => {
+  if (!result.ok) {
+    console.error(
+      `[recordings] RECORDINGS_DIR (${env.recordingsDir}) isn't writable: ${result.error} — recording will fail until this is fixed.`
+    );
+  }
+});
 
 app.listen(env.port, () => {
   console.log(`Multiview server listening on http://localhost:${env.port}`);

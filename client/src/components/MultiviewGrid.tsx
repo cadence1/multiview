@@ -10,11 +10,16 @@ export default function MultiviewGrid() {
   const removeFromGrid = useStore((s) => s.removeFromGrid);
   const masterVolume = useStore((s) => s.masterVolume);
   const creatorVolumes = useStore((s) => s.creatorVolumes);
+  const recordings = useStore((s) => s.recordings);
 
   const creatorById = useMemo(() => {
     const map = new Map(creators.map((c) => [c.id, c]));
     return map;
   }, [creators]);
+
+  const recordingCreatorIds = useMemo(() => {
+    return new Set(recordings.filter((r) => r.isActive).map((r) => r.creator_id));
+  }, [recordings]);
 
   const gridCreators = gridIds
     .map((id) => creatorById.get(id))
@@ -48,6 +53,7 @@ export default function MultiviewGrid() {
           status={statuses[creator.id]}
           volume={effectiveVolume(masterVolume, creatorVolumes[stableKey(creator)])}
           onRemove={() => removeFromGrid(creator.id)}
+          isRecording={recordingCreatorIds.has(creator.id)}
         />
       ))}
     </div>

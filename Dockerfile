@@ -24,6 +24,16 @@ WORKDIR /app/server
 ENV NODE_ENV=production
 ENV DATA_DIR=/app/server/data
 
+# ffmpeg + yt-dlp back the optional recording feature (server/src/recordings) —
+# harmless if unused. yt-dlp specifically via pip rather than Alpine's apk
+# package (which doesn't carry it): pip tracks upstream releases directly,
+# which matters here since yt-dlp ships frequent updates to keep up with
+# platforms changing their pages — apk's package, if it existed, would lag.
+# --break-system-packages is fine in a single-purpose container image; this
+# isn't a shared Python environment.
+RUN apk add --no-cache ffmpeg python3 py3-pip && \
+    pip install --no-cache-dir --break-system-packages yt-dlp
+
 COPY --from=build /app/server/package.json ./package.json
 RUN npm install --omit=dev
 

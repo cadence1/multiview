@@ -4,6 +4,7 @@ import { statusCache } from "./cache.js";
 import { adapters } from "./platforms/index.js";
 import type { CreatorRef, Platform } from "./platforms/types.js";
 import { isImminent } from "./platforms/types.js";
+import * as recorder from "./recordings/recorder.js";
 
 function toRef(row: CreatorRow): CreatorRef {
   return {
@@ -37,9 +38,34 @@ async function pollRefs(refs: CreatorRef[], logPrefix: string) {
   );
 }
 
+/**
+ * Starts a recording for any auto-record-enabled creator who's live and
+ * not already being recorded. Deliberately keyed off "is there an active
+ * recording right now" rather than a live-transition comparison — that
+ * also self-heals if a previous recording for the same creator already
+ * ended (naturally or otherwise) while they're still live, and it means no
+ * "previous status" bookkeeping is needed here at all. Never triggers a
+ * *stop* — see recorder.ts for why that's deliberately left to the
+ * recording process's own end-of-stream detection instead of our
+ * (sometimes flaky) live/offline reads.
+ */
+function checkAutoRecordings() {
+  for (const row of listCreators()) {
+    if (!row.auto_record || recorder.isRecording(row.id)) continue;
+    const status = statusCache.get(row.id);
+    if (status?.state !== "live") continue;
+    recorder.startRecording(row, status).then((result) => {
+      if (!result.ok) {
+        console.warn(`[poller] auto-record skipped for ${row.display_name}: ${result.error}`);
+      }
+    });
+  }
+}
+
 async function pollOnce() {
   const refs = listCreators().map(toRef);
   await pollRefs(refs, "");
+  checkAutoRecordings();
 }
 
 /**
@@ -61,6 +87,7 @@ async function pollImminent() {
     });
   if (refs.length === 0) return;
   await pollRefs(refs, "imminent ");
+  checkAutoRecordings();
 }
 
 const IMMINENT_POLL_MS = 60_000;

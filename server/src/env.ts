@@ -22,9 +22,19 @@ function resolveDataDir(): string {
   return dir;
 }
 
+function resolveRecordingsDir(dataDir: string): string {
+  const dir = process.env.RECORDINGS_DIR || path.join(dataDir, "recordings");
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+  return dir;
+}
+
+const dataDir = resolveDataDir();
+
 export const env = {
   port: Number(process.env.PORT || 8080),
-  dataDir: resolveDataDir(),
+  dataDir,
   youtubeApiKey: process.env.YOUTUBE_API_KEY || "",
   twitchClientId: process.env.TWITCH_CLIENT_ID || "",
   twitchClientSecret: process.env.TWITCH_CLIENT_SECRET || "",
@@ -32,4 +42,14 @@ export const env = {
   kickClientId: process.env.KICK_CLIENT_ID || "",
   kickClientSecret: process.env.KICK_CLIENT_SECRET || "",
   pollIntervalSeconds: Number(process.env.POLL_INTERVAL_SECONDS || 300),
+  recordingsDir: resolveRecordingsDir(dataDir),
+  // Refuses to *start* a new recording below this much free disk space —
+  // not a retention/cleanup policy (there isn't one; recordings are only
+  // ever removed by an explicit delete), just a safety net against ever
+  // filling the disk completely. 0 disables the check entirely.
+  recordingMinFreeGb: Number(process.env.RECORDING_MIN_FREE_GB ?? 2),
+  // Live recordings only (manual + auto-record) — a 5th concurrent attempt
+  // is rejected outright rather than queued, since queueing something
+  // time-sensitive just means missing the part spent waiting.
+  recordingMaxConcurrent: Number(process.env.RECORDING_MAX_CONCURRENT ?? 4),
 };

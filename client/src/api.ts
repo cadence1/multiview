@@ -1,4 +1,4 @@
-import type { Creator, CreatorStatus, ExportedCreator, ImportResult, Platform } from "./types.js";
+import type { Creator, CreatorStatus, ExportedCreator, ImportResult, Platform, Recording } from "./types.js";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`/api${path}`, {
@@ -34,4 +34,17 @@ export const api = {
       body: JSON.stringify({ creators }),
     }),
   listStatuses: () => request<CreatorStatus[]>("/status"),
+  setAutoRecord: (id: string, autoRecord: boolean) =>
+    request<Creator>(`/creators/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ autoRecord }),
+    }),
+  listRecordings: () => request<Recording[]>("/recordings"),
+  startRecording: (creatorId: string) =>
+    request<Recording>("/recordings", {
+      method: "POST",
+      body: JSON.stringify({ creatorId }),
+    }),
+  stopRecording: (id: string) => request<void>(`/recordings/${id}/stop`, { method: "POST" }),
+  deleteRecording: (id: string) => request<void>(`/recordings/${id}`, { method: "DELETE" }),
 };

@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { api } from "./api.js";
 import { stableKey } from "./utils.js";
-import type { Creator, CreatorStatus, ExportedCreator, ImportResult, Platform } from "./types.js";
+import type { Creator, CreatorStatus, ExportedCreator, ImportResult, Platform, Recording } from "./types.js";
 
 const GRID_STORAGE_KEY = "multiview.gridIds";
 const AUTO_ADD_STORAGE_KEY = "multiview.autoAddIds";
@@ -74,6 +74,8 @@ interface MultiviewState {
   creatorVolumes: Record<string, number>;
   loading: boolean;
   error: string | null;
+  /** In-progress + completed recordings — server-side, not per-browser, same as `creators`. */
+  recordings: Recording[];
 
   refreshCreators: () => Promise<void>;
   refreshStatuses: () => Promise<void>;
@@ -88,6 +90,11 @@ interface MultiviewState {
   setAutoAdd: (creator: Creator, pinned: boolean) => void;
   setMasterVolume: (v: number) => void;
   setCreatorVolume: (creator: Creator, v: number) => void;
+  toggleAutoRecord: (creator: Creator) => Promise<void>;
+  refreshRecordings: () => Promise<void>;
+  startRecording: (creatorId: string) => Promise<void>;
+  stopRecording: (id: string) => Promise<void>;
+  deleteRecording: (id: string) => Promise<void>;
 }
 
 export const useStore = create<MultiviewState>((set, get) => ({
@@ -99,6 +106,7 @@ export const useStore = create<MultiviewState>((set, get) => ({
   creatorVolumes: loadCreatorVolumes(),
   loading: false,
   error: null,
+  recordings: [],
 
   refreshCreators: async () => {
     const creators = await api.listCreators();
@@ -270,5 +278,38 @@ export const useStore = create<MultiviewState>((set, get) => ({
       saveCreatorVolumes(creatorVolumes);
       return { creatorVolumes };
     });
+  },
+
+  toggleAutoRecord: async (creator) => {
+    const next = !creator.auto_record;
+    const updated = await api.setAutoRecord(creator.id, next);
+    set((state) => ({
+      creators: state.creators.map((c) => (c.id === creator.id ? updated : c)),
+    }));
+  },
+
+  refreshRecordings: async () => {
+    const recordings = await api.listRecordings();
+    set({ recordings });
+  },
+
+  startRecording: async (creatorId) => {
+    const recording = await api.startRecording(creatorId);
+    set((state) => ({ recordings: [recording, ...state.recordings] }));
+  },
+
+  stopRecording: async (id) => {
+    await api.stopRecording(id);
+    // The server finalizes (remux, final size) asynchronously after the
+    // process actually exits — refresh shortly after so the list picks up
+    // the real completed state instead of staying on "recording".
+    setTimeout(() => {
+      get().refreshRecordings().catch(() => {});
+    }, 3000);
+  },
+
+  deleteRecording: async (id) => {
+    await api.deleteRecording(id);
+    set((state) => ({ recordings: state.recordings.filter((r) => r.id !== id) }));
   },
 }));

@@ -54,6 +54,18 @@ export function formatElapsed(iso?: string): string {
   return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
 }
 
+export function formatBytes(bytes: number | null | undefined): string {
+  if (!bytes || bytes <= 0) return "";
+  const units = ["B", "KB", "MB", "GB"];
+  let n = bytes;
+  let i = 0;
+  while (n >= 1024 && i < units.length - 1) {
+    n /= 1024;
+    i++;
+  }
+  return `${n.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
+}
+
 export function computeGridDims(n: number): { cols: number; rows: number } {
   if (n <= 0) return { cols: 1, rows: 1 };
   const cols = Math.ceil(Math.sqrt(n));

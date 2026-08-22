@@ -90,6 +90,46 @@ survive re-import correctly even though the server assigns a brand-new
 internal ID on every import — they're matched back up by the channel's
 actual platform ID, not that internal one.
 
+## Recording (optional)
+
+Save a live stream to disk for later viewing — YouTube, Twitch, and Kick
+(not RPlay; nothing extracts its stream). Requires `yt-dlp` and `ffmpeg` on
+`PATH` (both already in the Docker image); without them, a recording attempt
+just fails with a clear error rather than breaking anything else.
+
+- **⏺ on a live creator's row** starts a one-off recording right now; the
+  button becomes **⏹** to stop it early. **📼** is a standing per-creator
+  toggle — auto-record whenever they go live, no manual click needed.
+- **Recordings** (top right) lists everything, in progress or finished —
+  play inline, download, or delete.
+- Live recordings (manual or auto) are capped at `RECORDING_MAX_CONCURRENT`
+  (default 4) simultaneously — past that, a new one is rejected outright
+  rather than queued, since queueing something time-sensitive just means
+  missing the part spent waiting.
+- Internally records to MPEG-TS (resilient to interruption — the same
+  reason `yt-dlp` defaults to it for any live source) and remuxes to a real
+  `.mp4` once finished — fast and lossless, just repackaging, not
+  re-encoding — so it plays natively in a browser afterward. If the remux
+  itself fails, the `.ts` is kept as the deliverable instead: still fully
+  valid, just not natively browser-playable (VLC and similar handle it
+  fine).
+- A stall watcher stops (and still tries to salvage) a recording that's
+  stopped making real progress for a while — our own pipeline hanging, or
+  not noticing the source ended — rather than let it run indefinitely.
+  Marked "Stalled" rather than "Saved" so it's obviously distinguishable.
+- Stopping sends `yt-dlp` its own documented graceful-stop signal first
+  (finalizes the file cleanly), but escalates to an unconditional kill if it
+  hasn't actually exited after a short grace period — verified directly in
+  building this that a stuck process can simply not act on the polite
+  signal, so this is a real backstop, not a nicety.
+- No retention policy — recordings accumulate until you delete them
+  yourself. `RECORDING_MIN_FREE_GB` (default 2) just refuses to *start* a
+  new one below that much free disk space, as a safety net against ever
+  filling the disk completely.
+- `RECORDINGS_DIR` defaults to `DATA_DIR/recordings`; point it at an
+  already-mounted network share (SMB, etc.) with no other changes needed —
+  from the app's perspective that's indistinguishable from local disk.
+
 ## Notes & limitations
 
 - **No authentication.** This is meant for personal/LAN use. If you expose it
@@ -103,6 +143,13 @@ actual platform ID, not that internal one.
   client-credentials OAuth pattern as Twitch — see the table above.
 - **No drag-to-resize grid** in this version — the grid auto-arranges by
   count. Would be a reasonable follow-up.
+- **Recording** downloads the full stream via `yt-dlp`, not just metadata —
+  a more direct implication of most platforms' Terms of Service (which
+  generally prohibit unauthorized downloading) than anything else this app
+  does. Personal DVR-style archival is common and broadly tolerated in
+  practice (it's exactly what `yt-dlp` itself exists for), but this is
+  meant for your own private, self-hosted use — not redistribution — same
+  as the rest of this app's "personal/LAN use, no auth" framing above.
 
 ## Project layout
 
@@ -113,10 +160,11 @@ server/src/
   cache.ts        In-memory status cache written by the poller, read by the API
   poller.ts       Background loop that refreshes live/upcoming status
   platforms/      One adapter per platform (resolveChannel + getStatuses)
-  routes/         REST endpoints (/api/creators, /api/status)
+  recordings/     yt-dlp/ffmpeg process management + local storage for recording
+  routes/         REST endpoints (/api/creators, /api/status, /api/recordings)
 
 client/src/
-  store.ts        Zustand store: tracked creators, statuses, grid selection
+  store.ts        Zustand store: tracked creators, statuses, grid selection, recordings
   api.ts          Fetch wrapper for the backend REST API
-  components/     Sidebar, AddCreatorDialog, MultiviewGrid, PlayerCell
+  components/     Sidebar, AddCreatorDialog, MultiviewGrid, PlayerCell, RecordingsPanel
 ```
