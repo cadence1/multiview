@@ -1,12 +1,15 @@
 import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import type { Creator, StreamState } from "../types.js";
+import PlatformBadge from "./PlatformBadge.js";
+import { homeUrlFor } from "../utils.js";
 
 const MENU_WIDTH = 224;
 // No measured-height pass (same tradeoff StreamPreview makes) — just a
 // generous estimate to clamp against, since the item count here is small
-// and fixed enough that it won't run away from this.
-const MENU_HEIGHT_ESTIMATE = 200;
+// and fixed enough that it won't run away from this. Includes the name
+// header below.
+const MENU_HEIGHT_ESTIMATE = 240;
 
 interface Props {
   anchorRect: DOMRect;
@@ -89,6 +92,25 @@ export default function CreatorOptionsMenu({
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
     >
+      <div className="flex items-center gap-2 px-3 py-2">
+        {creator.avatar_url ? (
+          <img src={creator.avatar_url} alt="" className="h-6 w-6 shrink-0 rounded-full object-cover" />
+        ) : (
+          <div className="h-6 w-6 shrink-0 rounded-full bg-base-700" />
+        )}
+        <a
+          href={homeUrlFor(creator)}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="truncate text-xs font-semibold text-slate-100 hover:text-indigo-300 hover:underline"
+          title={`Open ${creator.display_name}'s page`}
+        >
+          {creator.display_name}
+        </a>
+        <PlatformBadge platform={creator.platform} />
+      </div>
+      <div className="border-t border-base-700" />
+
       <button
         onClick={onToggleAutoAdd}
         className="flex w-full items-center justify-between px-3 py-1.5 text-left text-xs text-slate-200 hover:bg-base-800"
