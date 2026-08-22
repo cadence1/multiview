@@ -4,9 +4,14 @@ import type { Recording, RecordingStatus } from "../types.js";
 import { formatBytes, formatRelativeToNow } from "../utils.js";
 import PlatformBadge from "./PlatformBadge.js";
 
+// Shared between... nothing else right now, but factored out of the old
+// slide-out RecordingsPanel specifically so the /saved page (SavedPage.tsx)
+// could become the one real home for this instead of duplicating it — see
+// Phase 3 in the DVR feature's plan.
+
 const STORAGE_POLL_MS = 30_000;
 
-function StorageBar() {
+export function StorageBar() {
   const storageStats = useStore((s) => s.storageStats);
   const refreshStorageStats = useStore((s) => s.refreshStorageStats);
 
@@ -36,10 +41,6 @@ function StorageBar() {
       </div>
     </div>
   );
-}
-
-interface Props {
-  onClose: () => void;
 }
 
 const STATUS_STYLE: Record<RecordingStatus, string> = {
@@ -180,34 +181,26 @@ function RecordingRow({ recording }: { recording: Recording }) {
   );
 }
 
-export default function RecordingsPanel({ onClose }: Props) {
+/** The actual recordings list — no outer chrome (header/close button) of
+ * its own, so callers (SavedPage today; the old slide-out RecordingsPanel
+ * before it) supply whatever page/panel frame makes sense for them. */
+export default function RecordingsList() {
   const recordings = useStore((s) => s.recordings);
 
   return (
-    <aside className="flex h-full w-96 shrink-0 flex-col border-l border-base-700 bg-base-900">
-      <div className="flex items-center justify-between border-b border-base-700 px-3 py-2">
-        <span className="text-sm font-semibold text-slate-200">Recordings</span>
-        <button
-          onClick={onClose}
-          className="rounded-md px-2 py-1 text-xs text-slate-400 hover:bg-base-800"
-          title="Hide recordings"
-        >
-          ⟩
-        </button>
-      </div>
-
-      <StorageBar />
-
-      <div className="flex-1 space-y-2 overflow-y-auto p-2">
-        {recordings.length === 0 ? (
-          <p className="mt-4 px-2 text-xs text-slate-500">
-            No recordings yet. Click ⏺ on a live creator in the sidebar to start one, or 📼 to always record them
-            when live.
-          </p>
-        ) : (
-          recordings.map((r) => <RecordingRow key={r.id} recording={r} />)
-        )}
-      </div>
-    </aside>
+    <>
+      {recordings.length === 0 ? (
+        <p className="mt-4 px-2 text-xs text-slate-500">
+          No recordings yet. Click ⏺ on a live creator in the sidebar to start one, or 📼 to always record them
+          when live.
+        </p>
+      ) : (
+        <div className="space-y-2">
+          {recordings.map((r) => (
+            <RecordingRow key={r.id} recording={r} />
+          ))}
+        </div>
+      )}
+    </>
   );
 }

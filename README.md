@@ -107,12 +107,13 @@ just fails with a clear error rather than breaking anything else.
   redundant). A pinned (📌), queued-to-record (⏱), or currently-recording
   (⏺) creator shows a small marker next to their name so it's visible
   without opening the menu.
-- **Recordings** (top right) lists everything, in progress or finished —
-  play inline, download, or delete. It also shows disk usage for the whole
-  volume `RECORDINGS_DIR` lives on (not just what your recordings
-  themselves take up), the same thing `RECORDING_MIN_FREE_GB` checks
-  against — so it's visible *why* a new recording might get refused before
-  it happens, not just after.
+- Click **Recordings** (top right) to go to **`/saved`**, a real
+  deep-linkable page (not a slide-out panel) listing everything, in
+  progress or finished — play inline, download, or delete. It also shows
+  disk usage for the whole volume `RECORDINGS_DIR` lives on (not just what
+  your recordings themselves take up), the same thing `RECORDING_MIN_FREE_GB`
+  checks against — so it's visible *why* a new recording might get refused
+  before it happens, not just after.
 - `RECORDING_MIN_FREE_GB` (default 5) is a disk-full safety net, checked two
   ways: a new recording refuses to *start* below that much free space, and
   every currently-active recording is stopped (checked every 30s) if free
@@ -189,11 +190,12 @@ server/src/
   cache.ts        In-memory status cache written by the poller, read by the API
   poller.ts       Background loop that refreshes live/upcoming status
   platforms/      One adapter per platform (resolveChannel + getStatuses)
-  recordings/     yt-dlp/ffmpeg process management + local storage for recording
+  recordings/     yt-dlp/ffmpeg process management + local storage (+ optional S3 offload) for recording
   routes/         REST endpoints (/api/creators, /api/status, /api/recordings)
 
 client/src/
   store.ts        Zustand store: tracked creators, statuses, grid selection, recordings
   api.ts          Fetch wrapper for the backend REST API
-  components/     Sidebar, AddCreatorDialog, MultiviewGrid, PlayerCell, RecordingsPanel
+  pages/          Top-level routes: MultiviewPage (/) and SavedPage (/saved)
+  components/     Sidebar, AddCreatorDialog, MultiviewGrid, PlayerCell, RecordingsList, ...
 ```
