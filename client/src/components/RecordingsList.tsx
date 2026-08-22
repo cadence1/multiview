@@ -269,6 +269,20 @@ function RecordingRow({ recording, onTagClick }: { recording: Recording; onTagCl
   );
 }
 
+/** Title and tags today; transcript search (once transcription exists —
+ * see the DVR plan) is the obvious next thing to check here, but there's
+ * nothing to search yet. A transcript could end up sizable enough that it
+ * isn't part of the plain GET /recordings payload at all, in which case
+ * this stops being purely client-side — not a concern this function needs
+ * to solve until that data actually exists. */
+function matchesSearch(recording: Recording, query: string): boolean {
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
+  if (recording.title?.toLowerCase().includes(q)) return true;
+  if (recording.tags.some((t) => t.toLowerCase().includes(q))) return true;
+  return false;
+}
+
 interface RecordingsListProps {
   /** Only recordings carrying this tag are shown — SavedPage's filter bar
    * drives this; the slide-out panel omits it and just shows everything,
@@ -278,14 +292,20 @@ interface RecordingsListProps {
    * either sets or (via SavedPage) is a no-op depending on whether the
    * caller actually wired up a filter bar. */
   onTagClick?: (tag: string) => void;
+  /** Free-text search against title + tags — combined with filterTag
+   * (both must match) when both are set, same as the slide-out panel just
+   * omitting this and showing everything. */
+  searchQuery?: string;
 }
 
 /** The actual recordings list — no outer chrome (header/close button) of
  * its own, so callers (SavedPage today; the old slide-out RecordingsPanel
  * before it) supply whatever page/panel frame makes sense for them. */
-export default function RecordingsList({ filterTag, onTagClick }: RecordingsListProps) {
+export default function RecordingsList({ filterTag, onTagClick, searchQuery }: RecordingsListProps) {
   const recordings = useStore((s) => s.recordings);
-  const visible = filterTag ? recordings.filter((r) => r.tags.includes(filterTag)) : recordings;
+  const visible = recordings.filter(
+    (r) => (!filterTag || r.tags.includes(filterTag)) && matchesSearch(r, searchQuery ?? "")
+  );
 
   if (recordings.length === 0) {
     return (
@@ -297,7 +317,13 @@ export default function RecordingsList({ filterTag, onTagClick }: RecordingsList
   }
 
   if (visible.length === 0) {
-    return <p className="mt-4 px-2 text-xs text-slate-500">No recordings tagged "{filterTag}".</p>;
+    return (
+      <p className="mt-4 px-2 text-xs text-slate-500">
+        No recordings match{filterTag ? ` tag "${filterTag}"` : ""}
+        {filterTag && searchQuery?.trim() ? " and" : ""}
+        {searchQuery?.trim() ? ` search "${searchQuery.trim()}"` : ""}.
+      </p>
+    );
   }
 
   return (

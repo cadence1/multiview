@@ -178,6 +178,12 @@ just fails with a clear error rather than breaking anything else.
   their own tag automatically). Click any tag to filter the list down to
   it, click it again (or **Clear**) to go back to everything; hover a tag
   to remove it, or use **+ tag** to add your own on top.
+- The **search box** on `/saved` matches against title and tags (so a
+  search for a creator's name already works too, for free — see the
+  creator/uploader auto-tag above) — combines with an active tag filter,
+  so both narrow the list together rather than one overriding the other.
+  Purely client-side today; transcript search (once transcription exists)
+  is the obvious next thing to fold in here.
 
 ## Notes & limitations
 

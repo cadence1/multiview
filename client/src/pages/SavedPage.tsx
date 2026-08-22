@@ -20,6 +20,7 @@ export default function SavedPage() {
   const refreshRecordings = useStore((s) => s.refreshRecordings);
   const recordings = useStore((s) => s.recordings);
   const [filterTag, setFilterTag] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
     refreshRecordings().catch(() => {});
@@ -62,6 +63,27 @@ export default function SavedPage() {
 
       <StorageBar />
 
+      <div className="mx-auto w-full max-w-3xl px-4 pt-3">
+        <div className="relative">
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search titles and tags…"
+            className="w-full rounded-md border border-base-600 bg-base-900 py-1.5 pl-3 pr-8 text-sm text-slate-200 placeholder:text-slate-500 focus:border-indigo-500 focus:outline-none"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery("")}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+              title="Clear search"
+            >
+              ×
+            </button>
+          )}
+        </div>
+      </div>
+
       {allTags.length > 0 && (
         <div className="mx-auto flex w-full max-w-3xl flex-wrap items-center gap-1.5 px-4 pt-3">
           <span className="text-[11px] text-slate-500">Filter:</span>
@@ -90,7 +112,7 @@ export default function SavedPage() {
       )}
 
       <div className="mx-auto w-full max-w-3xl flex-1 overflow-y-auto p-4">
-        <RecordingsList filterTag={filterTag ?? undefined} onTagClick={handleTagClick} />
+        <RecordingsList filterTag={filterTag ?? undefined} onTagClick={handleTagClick} searchQuery={searchQuery} />
       </div>
     </div>
   );
