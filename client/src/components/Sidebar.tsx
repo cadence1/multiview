@@ -57,6 +57,7 @@ export default function Sidebar({ onAddCreator, onClose }: Props) {
   const toggleAutoAdd = useStore((s) => s.toggleAutoAdd);
   const setAutoAdd = useStore((s) => s.setAutoAdd);
   const setCreatorVolume = useStore((s) => s.setCreatorVolume);
+  const removeCreator = useStore((s) => s.removeCreator);
   const removeCreators = useStore((s) => s.removeCreators);
   const importCreators = useStore((s) => s.importCreators);
   const toggleAutoRecord = useStore((s) => s.toggleAutoRecord);
@@ -91,6 +92,16 @@ export default function Sidebar({ onAddCreator, onClose }: Props) {
       else next.add(id);
       return next;
     });
+  }
+
+  async function handleDeleteOne(creator: Creator) {
+    const ok = window.confirm(`Stop tracking ${creator.display_name}? This can't be undone.`);
+    if (!ok) return;
+    try {
+      await removeCreator(creator.id);
+    } catch (err) {
+      showNotice(err instanceof Error ? err.message : String(err));
+    }
   }
 
   async function handleBulkDelete() {
@@ -312,6 +323,7 @@ export default function Sidebar({ onAddCreator, onClose }: Props) {
                           }
                         }}
                         onToggleAutoRecord={() => toggleAutoRecord(creator).catch((err) => showNotice(err.message))}
+                        onDelete={() => handleDeleteOne(creator)}
                       />
                     );
                   })}

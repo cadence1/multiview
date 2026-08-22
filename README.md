@@ -58,9 +58,9 @@ tracked but will always show as offline.
    again (or the ✕ on the cell) to remove it.
 4. The grid auto-lays-out based on how many streams are active (1×1, 2×1,
    2×2, 3×2, 3×3, …), same as Holodex's default behavior.
-5. Click the 📌 on a creator row to **pin** them — they'll open in the grid
-   automatically whenever they go live, and close automatically once they
-   end. Pinning a creator who's already live opens it right away.
+5. Open a creator's **⋮** menu and click **Pin to multiview** — they'll open
+   in the grid automatically whenever they go live, and close automatically
+   once they end. Pinning a creator who's already live opens it right away.
 6. Click **Chat** (top right) to dock a chat panel — it lists whichever
    creators are currently in your grid as tabs, and shows the live chat for
    whichever one you pick. Twitch chat works regardless of live status;
@@ -97,9 +97,12 @@ Save a live stream to disk for later viewing — YouTube, Twitch, and Kick
 `PATH` (both already in the Docker image); without them, a recording attempt
 just fails with a clear error rather than breaking anything else.
 
-- **⏺ on a live creator's row** starts a one-off recording right now; the
-  button becomes **⏹** to stop it early. **📼** is a standing per-creator
-  toggle — auto-record whenever they go live, no manual click needed.
+- **⋮ on a creator's row** opens their options: **Record now**/**Stop
+  recording** for a one-off recording of a live stream, and **Always
+  record** — a standing per-creator toggle that records every time they go
+  live, no manual click needed. A pinned (📌) or currently-recording (⏺)
+  creator shows a small marker next to their name so it's visible without
+  opening the menu.
 - **Recordings** (top right) lists everything, in progress or finished —
   play inline, download, or delete. It also shows disk usage for the whole
   volume `RECORDINGS_DIR` lives on (not just what your recordings

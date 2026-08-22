@@ -3,6 +3,7 @@ import type { Creator, CreatorStatus } from "../types.js";
 import { formatElapsed, formatRelativeToNow, homeUrlFor } from "../utils.js";
 import PlatformBadge from "./PlatformBadge.js";
 import StreamPreview from "./StreamPreview.js";
+import CreatorOptionsMenu from "./CreatorOptionsMenu.js";
 
 interface Props {
   creator: Creator;
@@ -20,6 +21,7 @@ interface Props {
   isRecording: boolean;
   onToggleRecording: () => void;
   onToggleAutoRecord: () => void;
+  onDelete: () => void;
 }
 
 export default function CreatorRow({
@@ -36,6 +38,7 @@ export default function CreatorRow({
   isRecording,
   onToggleRecording,
   onToggleAutoRecord,
+  onDelete,
 }: Props) {
   const state = status?.state ?? "offline";
   // Upcoming creators can be toggled into the grid too (as a placeholder
@@ -44,8 +47,11 @@ export default function CreatorRow({
   const canAddToGrid = state === "live" || state === "upcoming";
 
   const rowRef = useRef<HTMLDivElement>(null);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
   const [hovering, setHovering] = useState(false);
-  const showPreview = hovering && !selecting && (state === "upcoming" || state === "live");
+  const [menuOpen, setMenuOpen] = useState(false);
+  const showPreview = hovering && !selecting && !menuOpen && (state === "upcoming" || state === "live");
+  const hasActiveOptions = autoAdd || Boolean(creator.auto_record) || isRecording;
 
   function handleClick() {
     if (selecting) {
@@ -105,6 +111,16 @@ export default function CreatorRow({
           <span className="truncate text-sm font-medium text-slate-100">
             {creator.display_name}
           </span>
+          {autoAdd && (
+            <span className="shrink-0 text-[10px]" title="Pinned — always opens in multiview when live">
+              📌
+            </span>
+          )}
+          {isRecording && (
+            <span className="shrink-0 text-[10px] text-red-400" title="Currently recording">
+              ⏺
+            </span>
+          )}
           <PlatformBadge platform={creator.platform} />
         </div>
         <div className="truncate text-xs text-slate-400">
@@ -131,61 +147,36 @@ export default function CreatorRow({
 
       {!selecting && (
         <button
+          ref={menuButtonRef}
           onClick={(e) => {
             e.stopPropagation();
-            onToggleAutoAdd();
+            setMenuOpen((open) => !open);
           }}
           className={`shrink-0 rounded px-1.5 py-0.5 text-xs transition-opacity ${
-            autoAdd
-              ? "text-indigo-400 opacity-100 hover:bg-base-700 hover:text-indigo-300"
+            hasActiveOptions || menuOpen
+              ? "bg-base-700 text-slate-200 opacity-100"
               : "text-slate-500 opacity-0 hover:bg-base-700 hover:text-slate-200 group-hover:opacity-100"
           }`}
-          title={
-            autoAdd
-              ? "Always opens when live, closes when it ends (click to unpin)"
-              : "Always open in multiview when live, close when it ends"
-          }
+          title="Pin, always-record, and other options"
         >
-          📌
+          ⋮
         </button>
       )}
 
-      {!selecting && recordingSupported && (
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onToggleAutoRecord();
-          }}
-          className={`shrink-0 rounded px-1.5 py-0.5 text-xs transition-opacity ${
-            creator.auto_record
-              ? "text-red-400 opacity-100 hover:bg-base-700 hover:text-red-300"
-              : "text-slate-500 opacity-0 hover:bg-base-700 hover:text-slate-200 group-hover:opacity-100"
-          }`}
-          title={
-            creator.auto_record
-              ? "Always records when live, saved when it ends (click to turn off)"
-              : "Always record when live, save when it ends"
-          }
-        >
-          📼
-        </button>
-      )}
-
-      {!selecting && recordingSupported && (isRecording || state === "live") && (
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onToggleRecording();
-          }}
-          className={`shrink-0 rounded px-1.5 py-0.5 text-xs ${
-            isRecording
-              ? "bg-red-600/80 text-white hover:bg-red-500"
-              : "text-slate-500 hover:bg-base-700 hover:text-slate-200"
-          }`}
-          title={isRecording ? "Stop recording" : "Start recording now"}
-        >
-          {isRecording ? "⏹" : "⏺"}
-        </button>
+      {menuOpen && menuButtonRef.current && (
+        <CreatorOptionsMenu
+          anchorRect={menuButtonRef.current.getBoundingClientRect()}
+          onClose={() => setMenuOpen(false)}
+          creator={creator}
+          state={state}
+          autoAdd={autoAdd}
+          onToggleAutoAdd={onToggleAutoAdd}
+          recordingSupported={recordingSupported}
+          isRecording={isRecording}
+          onToggleRecording={onToggleRecording}
+          onToggleAutoRecord={onToggleAutoRecord}
+          onDelete={onDelete}
+        />
       )}
     </div>
   );
