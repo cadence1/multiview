@@ -3,6 +3,7 @@ import { listCreators, type CreatorRow } from "./db.js";
 import { statusCache } from "./cache.js";
 import { adapters } from "./platforms/index.js";
 import type { CreatorRef, Platform } from "./platforms/types.js";
+import { isImminent } from "./platforms/types.js";
 
 function toRef(row: CreatorRow): CreatorRef {
   return {
@@ -13,28 +14,59 @@ function toRef(row: CreatorRow): CreatorRef {
   };
 }
 
-async function pollOnce() {
-  const rows = listCreators();
-  const byPlatform = new Map<Platform, CreatorRef[]>();
-  for (const row of rows) {
-    const list = byPlatform.get(row.platform) ?? [];
-    list.push(toRef(row));
-    byPlatform.set(row.platform, list);
+function byPlatform(refs: CreatorRef[]): Map<Platform, CreatorRef[]> {
+  const map = new Map<Platform, CreatorRef[]>();
+  for (const ref of refs) {
+    const list = map.get(ref.platform) ?? [];
+    list.push(ref);
+    map.set(ref.platform, list);
   }
+  return map;
+}
 
+async function pollRefs(refs: CreatorRef[], logPrefix: string) {
   await Promise.all(
-    Array.from(byPlatform.entries()).map(async ([platform, creators]) => {
+    Array.from(byPlatform(refs).entries()).map(async ([platform, creators]) => {
       try {
         const statuses = await adapters[platform].getStatuses(creators);
         statusCache.setMany(statuses.values());
       } catch (err) {
-        console.error(`[poller] ${platform} status check failed:`, err);
+        console.error(`[poller] ${logPrefix}${platform} status check failed:`, err);
       }
     })
   );
 }
 
+async function pollOnce() {
+  const refs = listCreators().map(toRef);
+  await pollRefs(refs, "");
+}
+
+/**
+ * Re-checks only creators the cache already has marked "upcoming" with a
+ * scheduled start close to now (see isImminent) — at the default 5-minute
+ * poll interval, a stream that goes live right after a regular poll could
+ * otherwise sit undetected for most of that window. Runs far more often
+ * than the regular poll, but over a small, self-limiting set: nothing stays
+ * in it once it's actually live (the next tick's cache read no longer
+ * matches "upcoming") or once isImminent's own grace period lapses.
+ */
+async function pollImminent() {
+  const refs = listCreators()
+    .map(toRef)
+    .filter((ref) => {
+      const status = statusCache.get(ref.id);
+      if (status?.state !== "upcoming" || !status.startTime) return false;
+      return isImminent(new Date(status.startTime).getTime());
+    });
+  if (refs.length === 0) return;
+  await pollRefs(refs, "imminent ");
+}
+
+const IMMINENT_POLL_MS = 60_000;
+
 let timer: NodeJS.Timeout | null = null;
+let imminentTimer: NodeJS.Timeout | null = null;
 
 export function startPoller() {
   // Run once immediately, then on the configured interval.
@@ -42,10 +74,14 @@ export function startPoller() {
   timer = setInterval(() => {
     pollOnce().catch((err) => console.error("[poller] poll failed:", err));
   }, env.pollIntervalSeconds * 1000);
+  imminentTimer = setInterval(() => {
+    pollImminent().catch((err) => console.error("[poller] imminent poll failed:", err));
+  }, IMMINENT_POLL_MS);
 }
 
 export function stopPoller() {
   if (timer) clearInterval(timer);
+  if (imminentTimer) clearInterval(imminentTimer);
 }
 
 /** Poll a single platform immediately (used right after adding a new creator). */

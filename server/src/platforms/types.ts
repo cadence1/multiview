@@ -65,3 +65,25 @@ export function isWithinUpcomingWindow(startMs: number): boolean {
   const deltaMs = startMs - Date.now();
   return deltaMs >= -UPCOMING_PAST_GRACE_MS && deltaMs <= UPCOMING_WINDOW_MS;
 }
+
+/**
+ * How soon before its scheduled start an "upcoming" creator gets picked up
+ * by the poller's fast lane (see poller.ts) instead of waiting for the next
+ * regular poll — which, at the default 5-minute interval, could otherwise
+ * leave a stream that just went live undetected for most of that window.
+ */
+export const IMMINENT_LOOKAHEAD_MS = 3 * 60 * 1000; // 3 minutes ahead
+
+/**
+ * How long past its scheduled start an "upcoming" creator stays in the fast
+ * lane — covers an ordinary late start without fast-polling something
+ * that's actually just stale forever (isWithinUpcomingWindow's own much
+ * longer grace period still governs when it drops to "offline" outright).
+ */
+export const IMMINENT_PAST_GRACE_MS = 15 * 60 * 1000; // 15 minutes late
+
+/** Whether a scheduled start time is close enough to now to fast-poll for it. */
+export function isImminent(startMs: number): boolean {
+  const deltaMs = startMs - Date.now();
+  return deltaMs >= -IMMINENT_PAST_GRACE_MS && deltaMs <= IMMINENT_LOOKAHEAD_MS;
+}
