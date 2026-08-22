@@ -101,7 +101,11 @@ just fails with a clear error rather than breaking anything else.
   button becomes **⏹** to stop it early. **📼** is a standing per-creator
   toggle — auto-record whenever they go live, no manual click needed.
 - **Recordings** (top right) lists everything, in progress or finished —
-  play inline, download, or delete.
+  play inline, download, or delete. It also shows disk usage for the whole
+  volume `RECORDINGS_DIR` lives on (not just what your recordings
+  themselves take up), the same thing `RECORDING_MIN_FREE_GB` checks
+  against — so it's visible *why* a new recording might get refused before
+  it happens, not just after.
 - Live recordings (manual or auto) are capped at `RECORDING_MAX_CONCURRENT`
   (default 4) simultaneously — past that, a new one is rejected outright
   rather than queued, since queueing something time-sensitive just means

@@ -42,20 +42,36 @@ export async function checkWritable(): Promise<{ ok: true } | { ok: false; error
   }
 }
 
-/** Free space on the recordings volume, in GB. */
-export async function freeSpaceGb(): Promise<number> {
-  const stat = await fsPromises.statfs(env.recordingsDir);
-  return (stat.bavail * stat.bsize) / 1024 ** 3;
+export interface VolumeStats {
+  totalBytes: number;
+  freeBytes: number;
+  usedBytes: number;
+}
+
+/**
+ * Stats for the whole volume backing RECORDINGS_DIR — not just what the
+ * recordings themselves take up, the actual disk (or share) they live on,
+ * matching what RECORDING_MIN_FREE_GB's safety check is really weighing
+ * against. usedBytes is everything else on that volume too, not just
+ * Multiview's own recordings.
+ */
+export async function volumeStats(): Promise<VolumeStats | null> {
+  try {
+    const stat = await fsPromises.statfs(env.recordingsDir);
+    const totalBytes = stat.blocks * stat.bsize;
+    const freeBytes = stat.bavail * stat.bsize;
+    return { totalBytes, freeBytes, usedBytes: totalBytes - freeBytes };
+  } catch {
+    return null; // statfs not supported on this platform/volume
+  }
 }
 
 /** RECORDING_MIN_FREE_GB=0 disables the check entirely. */
 export async function hasEnoughFreeSpace(): Promise<boolean> {
   if (env.recordingMinFreeGb <= 0) return true;
-  try {
-    return (await freeSpaceGb()) >= env.recordingMinFreeGb;
-  } catch {
-    return true; // statfs not supported on this platform/volume — don't block on a check we can't perform
-  }
+  const stats = await volumeStats();
+  if (!stats) return true; // couldn't check — don't block on a check we can't perform
+  return stats.freeBytes / 1024 ** 3 >= env.recordingMinFreeGb;
 }
 
 export async function statFile(fileName: string): Promise<{ size: number } | null> {

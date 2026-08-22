@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { api } from "./api.js";
 import { stableKey } from "./utils.js";
-import type { Creator, CreatorStatus, ExportedCreator, ImportResult, Platform, Recording } from "./types.js";
+import type { Creator, CreatorStatus, ExportedCreator, ImportResult, Platform, Recording, VolumeStats } from "./types.js";
 
 const GRID_STORAGE_KEY = "multiview.gridIds";
 const AUTO_ADD_STORAGE_KEY = "multiview.autoAddIds";
@@ -76,6 +76,8 @@ interface MultiviewState {
   error: string | null;
   /** In-progress + completed recordings — server-side, not per-browser, same as `creators`. */
   recordings: Recording[];
+  /** Disk usage for the whole volume backing RECORDINGS_DIR, not just recordings' own footprint — null until first fetched. */
+  storageStats: VolumeStats | null;
 
   refreshCreators: () => Promise<void>;
   refreshStatuses: () => Promise<void>;
@@ -95,6 +97,7 @@ interface MultiviewState {
   startRecording: (creatorId: string) => Promise<void>;
   stopRecording: (id: string) => Promise<void>;
   deleteRecording: (id: string) => Promise<void>;
+  refreshStorageStats: () => Promise<void>;
 }
 
 export const useStore = create<MultiviewState>((set, get) => ({
@@ -107,6 +110,7 @@ export const useStore = create<MultiviewState>((set, get) => ({
   loading: false,
   error: null,
   recordings: [],
+  storageStats: null,
 
   refreshCreators: async () => {
     const creators = await api.listCreators();
@@ -311,5 +315,14 @@ export const useStore = create<MultiviewState>((set, get) => ({
   deleteRecording: async (id) => {
     await api.deleteRecording(id);
     set((state) => ({ recordings: state.recordings.filter((r) => r.id !== id) }));
+    // Freed space won't show up until the next storage refresh — deletion
+    // is the one recording action where the disk numbers actually change,
+    // so refresh proactively rather than waiting on the panel's own timer.
+    get().refreshStorageStats().catch(() => {});
+  },
+
+  refreshStorageStats: async () => {
+    const storageStats = await api.getRecordingStorage();
+    set({ storageStats });
   },
 }));

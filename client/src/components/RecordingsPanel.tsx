@@ -1,8 +1,42 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useStore } from "../store.js";
 import type { Recording, RecordingStatus } from "../types.js";
 import { formatBytes, formatRelativeToNow } from "../utils.js";
 import PlatformBadge from "./PlatformBadge.js";
+
+const STORAGE_POLL_MS = 30_000;
+
+function StorageBar() {
+  const storageStats = useStore((s) => s.storageStats);
+  const refreshStorageStats = useStore((s) => s.refreshStorageStats);
+
+  useEffect(() => {
+    refreshStorageStats().catch(() => {});
+    const id = setInterval(() => {
+      refreshStorageStats().catch(() => {});
+    }, STORAGE_POLL_MS);
+    return () => clearInterval(id);
+  }, [refreshStorageStats]);
+
+  if (!storageStats) return null;
+  const { totalBytes, usedBytes } = storageStats;
+  const pct = totalBytes > 0 ? Math.min(100, Math.round((usedBytes / totalBytes) * 100)) : 0;
+
+  return (
+    <div className="border-b border-base-700 px-3 py-2" title="Disk usage for the whole volume RECORDINGS_DIR lives on, not just Multiview's own recordings">
+      <div className="mb-1 flex items-center justify-between text-[11px] text-slate-400">
+        <span>{formatBytes(usedBytes)} used of {formatBytes(totalBytes)}</span>
+        <span>{formatBytes(storageStats.freeBytes)} free</span>
+      </div>
+      <div className="h-1.5 w-full overflow-hidden rounded-full bg-base-800">
+        <div
+          className={`h-full rounded-full ${pct >= 90 ? "bg-red-500" : pct >= 75 ? "bg-amber-500" : "bg-indigo-500"}`}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+    </div>
+  );
+}
 
 interface Props {
   onClose: () => void;
@@ -154,6 +188,8 @@ export default function RecordingsPanel({ onClose }: Props) {
           ⟩
         </button>
       </div>
+
+      <StorageBar />
 
       <div className="flex-1 space-y-2 overflow-y-auto p-2">
         {recordings.length === 0 ? (

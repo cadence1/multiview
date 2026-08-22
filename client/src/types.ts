@@ -14,6 +14,13 @@ export interface Creator {
 
 export type RecordingStatus = "recording" | "completed" | "stalled" | "failed";
 
+/** Stats for the whole volume backing RECORDINGS_DIR, not just the recordings themselves. */
+export interface VolumeStats {
+  totalBytes: number;
+  freeBytes: number;
+  usedBytes: number;
+}
+
 export interface Recording {
   id: string;
   creator_id: string;

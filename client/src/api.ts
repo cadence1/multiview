@@ -1,4 +1,4 @@
-import type { Creator, CreatorStatus, ExportedCreator, ImportResult, Platform, Recording } from "./types.js";
+import type { Creator, CreatorStatus, ExportedCreator, ImportResult, Platform, Recording, VolumeStats } from "./types.js";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`/api${path}`, {
@@ -47,4 +47,5 @@ export const api = {
     }),
   stopRecording: (id: string) => request<void>(`/recordings/${id}/stop`, { method: "POST" }),
   deleteRecording: (id: string) => request<void>(`/recordings/${id}`, { method: "DELETE" }),
+  getRecordingStorage: () => request<VolumeStats>("/recordings/storage"),
 };

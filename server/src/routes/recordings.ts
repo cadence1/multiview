@@ -10,6 +10,12 @@ recordingsRouter.get("/", (_req, res) => {
   res.json(recorder.listRecordings());
 });
 
+recordingsRouter.get("/storage", async (_req, res) => {
+  const stats = await storage.volumeStats();
+  if (!stats) return res.status(501).json({ error: "disk usage isn't available on this platform/volume" });
+  res.json(stats);
+});
+
 recordingsRouter.post("/", async (req, res) => {
   const { creatorId } = req.body ?? {};
   if (typeof creatorId !== "string" || !creatorId) {
