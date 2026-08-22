@@ -31,5 +31,5 @@ export const env = {
   twitchEmbedParent: process.env.TWITCH_EMBED_PARENT || "localhost",
   kickClientId: process.env.KICK_CLIENT_ID || "",
   kickClientSecret: process.env.KICK_CLIENT_SECRET || "",
-  pollIntervalSeconds: Number(process.env.POLL_INTERVAL_SECONDS || 90),
+  pollIntervalSeconds: Number(process.env.POLL_INTERVAL_SECONDS || 300),
 };

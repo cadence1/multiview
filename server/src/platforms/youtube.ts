@@ -20,9 +20,18 @@ const PAGE_HEADERS = {
 async function fetchText(url: string): Promise<string | null> {
   try {
     const res = await fetch(url, { headers: PAGE_HEADERS });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      // Distinguishes an actual block/rate-limit (which shows up as a
+      // non-2xx, e.g. 429/503) from a page that loads fine but can't be
+      // parsed (logged separately in getStatusFor) — both silently fell
+      // back to "offline" before, with nothing in the logs to tell them
+      // apart.
+      console.warn(`[youtube] ${res.status} ${res.statusText} fetching ${url}`);
+      return null;
+    }
     return await res.text();
-  } catch {
+  } catch (err) {
+    console.warn(`[youtube] network error fetching ${url}:`, err instanceof Error ? err.message : err);
     return null;
   }
 }
@@ -293,7 +302,18 @@ async function getStatusFor(creator: CreatorRef): Promise<CreatorStatus> {
   if (!html) return offlineStatus(creator.id);
 
   const parsed = parseLivePage(html);
-  if (!parsed) return offlineStatus(creator.id);
+  if (!parsed) {
+    // The page loaded fine (fetchText already logs actual HTTP/network
+    // failures) but didn't contain the JSON blob we scrape — e.g. YouTube
+    // served a bot-check/consent interstitial or A/B-tested a different
+    // page shape instead of the usual live page. The page's own <title>
+    // is usually enough to tell which, without dumping the whole page.
+    const title = matchOne(html, /<title>([^<]*)<\/title>/) || "(no <title>)";
+    console.warn(
+      `[youtube] couldn't parse live page for ${creator.platformId} (${html.length} bytes, title: "${title}")`
+    );
+    return offlineStatus(creator.id);
+  }
 
   const updatedAt = new Date().toISOString();
 
