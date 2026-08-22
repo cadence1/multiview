@@ -38,6 +38,12 @@ interface ActiveRecording {
   stallInterval: NodeJS.Timeout | null;
   lastSize: number;
   noGrowthCount: number;
+  /** True for a manual downloadVideo() download (Phase 5), false for a live
+   * creator capture from startRecording(). Gates finishRecording's remux
+   * step — a download is never MPEG-TS in the first place (yt-dlp's own
+   * --remux-video/--merge-output-format flags already guarantee an mp4/mkv
+   * container for it directly), so there's nothing to repackage. */
+  isDownload: boolean;
 }
 
 const active = new Map<string, ActiveRecording>();
@@ -221,7 +227,7 @@ async function finishRecording(rec: ActiveRecording, code: number | null, stderr
   let fileName = producedFileName ?? rec.namePart;
   let fileSizeBytes = producedStat?.size ?? null;
 
-  if (hasContent && producedFileName && status !== "failed") {
+  if (!rec.isDownload && hasContent && producedFileName && status !== "failed") {
     // yt-dlp's own extension choice for a live source can itself be ".mp4"
     // even though the actual container is MPEG-TS (verified directly) — so
     // the remux target can't just be "<namePart>.mp4" unconditionally, that
@@ -369,6 +375,7 @@ export async function startRecording(creator: CreatorRow, status: CreatorStatus)
     stallInterval: null,
     lastSize: 0,
     noGrowthCount: 0,
+    isDownload: false,
   };
   active.set(recordingId, rec);
 
@@ -396,6 +403,204 @@ export async function startRecording(creator: CreatorRow, status: CreatorStatus)
   child.on("close", (code) => {
     finishRecording(rec, code, stderrTail).catch((err) =>
       console.error(`[recorder] error finishing recording ${recordingId}:`, err)
+    );
+  });
+
+  return { ok: true, recording: row };
+}
+
+/** Maps yt-dlp's extractor name to one of our own platform labels when it's
+ * a site we already have a live adapter for, otherwise just lowercases
+ * whatever yt-dlp itself calls it (e.g. "vimeo", "tiktok", "generic") — see
+ * db.ts's RecordingRow.platform doc comment on why this is a plain string,
+ * not the strict Platform union CreatorRow uses. */
+function platformFromExtractor(extractorKey: unknown): string {
+  const key = (typeof extractorKey === "string" ? extractorKey : "generic").toLowerCase();
+  if (key.startsWith("youtube")) return "youtube";
+  if (key.startsWith("twitch")) return "twitch";
+  if (key.startsWith("kick")) return "kick";
+  return key;
+}
+
+interface VideoMetadata {
+  title: string;
+  displayName: string;
+  thumbnailUrl: string | undefined;
+  platform: string;
+}
+
+/** A quick metadata-only pass (--skip-download) before the real download —
+ * lets the DB row (and the UI) show the real title/uploader/thumbnail from
+ * the moment it's created, same as a live recording already gets from the
+ * poller's own CreatorStatus, rather than a placeholder until the download
+ * finishes. Also doubles as upfront validation: if yt-dlp can't even read
+ * the URL's metadata, it's not going to be able to download it either. */
+function fetchVideoMetadata(url: string): Promise<VideoMetadata | null> {
+  return new Promise((resolve) => {
+    const proc = spawn("yt-dlp", ["--dump-json", "--skip-download", "--no-playlist", "--no-warnings", url], {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+    proc.stdout?.on("data", (d: Buffer) => {
+      stdout += d.toString();
+    });
+    proc.stderr?.on("data", (d: Buffer) => {
+      stderr = (stderr + d.toString()).slice(-2000);
+    });
+    proc.on("error", () => resolve(null));
+    proc.on("close", (code) => {
+      if (code !== 0 || !stdout.trim()) {
+        console.warn(`[recorder] metadata fetch failed for ${url}: ${stderr.trim().slice(-300) || `exit ${code}`}`);
+        resolve(null);
+        return;
+      }
+      try {
+        // Just the first line — --dump-json prints one JSON object per
+        // line, and --no-playlist already limits this to a single video.
+        const info = JSON.parse(stdout.trim().split("\n")[0]);
+        const platform = platformFromExtractor(info.extractor_key);
+        resolve({
+          title: typeof info.title === "string" ? info.title : "Untitled",
+          displayName:
+            typeof info.uploader === "string"
+              ? info.uploader
+              : typeof info.channel === "string"
+                ? info.channel
+                : platform,
+          thumbnailUrl: typeof info.thumbnail === "string" ? info.thumbnail : undefined,
+          platform,
+        });
+      } catch {
+        resolve(null);
+      }
+    });
+  });
+}
+
+/**
+ * Phase 5: manually download an arbitrary URL — anything yt-dlp itself
+ * recognizes, not tied to a tracked creator's live status at all. Simpler
+ * than a live capture in a real way: no interruption-resilience concern (a
+ * finished upload isn't a live stream that can go dead mid-download the way
+ * a creator's feed can), so no MPEG-TS-then-remux dance — yt-dlp's own
+ * --remux-video/--merge-output-format flags below produce a directly
+ * browser-playable file on their own. Shares the concurrency cap, disk-space
+ * gate, stall watcher, and S3 offload with live recordings via the same
+ * `active` map — a large download can exhaust disk or hang just as easily.
+ */
+export async function downloadVideo(url: string): Promise<StartRecordingResult> {
+  const trimmed = url.trim();
+  if (!trimmed) {
+    return { ok: false, error: "url is required" };
+  }
+  if (active.size >= env.recordingMaxConcurrent) {
+    return { ok: false, error: `at the concurrent recording limit (${env.recordingMaxConcurrent})` };
+  }
+  if (!(await storage.hasEnoughFreeSpace())) {
+    return { ok: false, error: `less than ${env.recordingMinFreeGb}GB free disk space — refusing to start` };
+  }
+
+  const metadata = await fetchVideoMetadata(trimmed);
+  if (!metadata) {
+    return { ok: false, error: "couldn't read that URL — check it's a valid, publicly accessible video link yt-dlp supports" };
+  }
+
+  const recordingId = nanoid();
+  const startedAt = new Date().toISOString();
+  const namePart = storage.sanitizeFileNameComponent(`${metadata.platform}-${metadata.displayName}-${startedAt}`);
+  const outputTemplate = storage.absolutePath(`${namePart}.%(ext)s`);
+  if (!outputTemplate) return { ok: false, error: "invalid output path" };
+
+  const thumbnailFileName = await downloadThumbnail(metadata.thumbnailUrl, `${namePart}.jpg`);
+
+  const row: RecordingRow = {
+    id: recordingId,
+    creator_id: "", // not tied to a tracked creator — see db.ts's doc comment
+    platform: metadata.platform,
+    display_name: metadata.displayName,
+    title: metadata.title,
+    thumbnail_file_name: thumbnailFileName,
+    file_name: `${namePart}.mp4`, // best-guess placeholder until finishRecording discovers the real one
+    status: "recording",
+    started_at: startedAt,
+    ended_at: null,
+    file_size_bytes: null,
+    error: null,
+    storage_location: "local",
+  };
+  statements.insertRecording.run(row);
+
+  const child = spawn(
+    "yt-dlp",
+    [
+      trimmed,
+      "-o",
+      outputTemplate,
+      "--no-playlist",
+      "--no-part",
+      "--newline",
+      // Guarantees a directly browser-playable container without our own
+      // remux step: merges to mp4 when a merge is needed at all, and
+      // remuxes losslessly to mp4 (falling back to mkv only if the
+      // video/audio codec genuinely can't go in an mp4 container) either
+      // way, covering both the merged and already-single-file cases.
+      "--merge-output-format",
+      "mp4",
+      "--remux-video",
+      "mp4/mkv",
+    ],
+    {
+      stdio: ["ignore", "ignore", "pipe"],
+      detached: !IS_WINDOWS,
+    }
+  );
+
+  let stderrTail = "";
+  child.stderr?.on("data", (d: Buffer) => {
+    stderrTail = (stderrTail + d.toString()).slice(-4000);
+  });
+
+  const rec: ActiveRecording = {
+    recordingId,
+    creatorId: "",
+    process: child,
+    namePart,
+    thumbnailFileName,
+    stopRequested: false,
+    autoStopReason: null,
+    killTimer: null,
+    stallInterval: null,
+    lastSize: 0,
+    noGrowthCount: 0,
+    isDownload: true,
+  };
+  active.set(recordingId, rec);
+
+  rec.stallInterval = setInterval(() => {
+    storage.findRecordingFile(namePart, thumbnailFileName).then(async (found) => {
+      const stat = found ? await storage.statFile(found) : null;
+      const size = stat?.size ?? 0;
+      if (size - rec.lastSize < MIN_GROWTH_BYTES) {
+        rec.noGrowthCount++;
+        if (rec.noGrowthCount >= STALL_CHECK_COUNT_THRESHOLD) {
+          const minutes = (STALL_CHECK_INTERVAL_MS * STALL_CHECK_COUNT_THRESHOLD) / 60_000;
+          console.warn(`[recorder] download ${recordingId} looks stalled (no growth for ~${minutes}min) — stopping it`);
+          requestStop(rec, "stalled");
+        }
+      } else {
+        rec.noGrowthCount = 0;
+      }
+      rec.lastSize = size;
+    });
+  }, STALL_CHECK_INTERVAL_MS);
+
+  child.on("error", (err) => {
+    console.error(`[recorder] failed to start yt-dlp download for ${trimmed}:`, err.message);
+  });
+  child.on("close", (code) => {
+    finishRecording(rec, code, stderrTail).catch((err) =>
+      console.error(`[recorder] error finishing download ${recordingId}:`, err)
     );
   });
 

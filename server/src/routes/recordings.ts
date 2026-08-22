@@ -33,6 +33,20 @@ recordingsRouter.post("/", async (req, res) => {
   res.status(201).json(result.recording);
 });
 
+// Phase 5: manually download an arbitrary URL, not tied to a tracked
+// creator's live status at all — see recorder.ts's downloadVideo for why
+// this is simpler than a live capture. A static path, not /:id/..., so no
+// ambiguity with the id-scoped routes below.
+recordingsRouter.post("/download", async (req, res) => {
+  const { url } = req.body ?? {};
+  if (typeof url !== "string" || !url.trim()) {
+    return res.status(400).json({ error: "url is required" });
+  }
+  const result = await recorder.downloadVideo(url);
+  if (!result.ok) return res.status(409).json({ error: result.error });
+  res.status(201).json(result.recording);
+});
+
 recordingsRouter.post("/:id/stop", (req, res) => {
   const result = recorder.stopRecording(req.params.id);
   if (!result.ok) return res.status(409).json({ error: result.error });

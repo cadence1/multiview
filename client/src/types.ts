@@ -25,8 +25,14 @@ export interface VolumeStats {
 
 export interface Recording {
   id: string;
+  /** Empty string when this isn't tied to a tracked creator — a manual
+   * "download any URL" recording rather than one captured from a
+   * creator going live. */
   creator_id: string;
-  platform: Platform;
+  /** Loose on purpose: a manual download's source can be anything yt-dlp
+   * recognizes, not just the app's own four live platforms — see
+   * PlatformBadge for how an unrecognized one renders. */
+  platform: string;
   display_name: string;
   title: string | null;
   thumbnail_file_name: string | null;

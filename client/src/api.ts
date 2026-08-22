@@ -51,6 +51,11 @@ export const api = {
       body: JSON.stringify({ creatorId }),
     }),
   stopRecording: (id: string) => request<void>(`/recordings/${id}/stop`, { method: "POST" }),
+  downloadVideo: (url: string) =>
+    request<Recording>("/recordings/download", {
+      method: "POST",
+      body: JSON.stringify({ url }),
+    }),
   deleteRecording: (id: string) => request<void>(`/recordings/${id}`, { method: "DELETE" }),
   getRecordingStorage: () => request<VolumeStats>("/recordings/storage"),
 };

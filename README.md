@@ -159,6 +159,15 @@ just fails with a clear error rather than breaking anything else.
   reachable from your browser. A failed upload just leaves the recording
   local, same as if S3 weren't configured at all. See `.env.example` for
   the full list of `S3_*` settings.
+- **+ Download video** on the `/saved` page downloads a one-off URL —
+  anything `yt-dlp` itself recognizes (YouTube, Twitch/Kick VODs, and
+  plenty of other sites), not just a tracked creator's live stream. Simpler
+  internally than a live capture: no interruption-resilience concern, so it
+  skips the MPEG-TS-then-remux step entirely and just asks `yt-dlp` to
+  produce a directly browser-playable file. Shares the same concurrency
+  cap, disk-space safety net, and S3 offload as live recordings. Shows up
+  in the same list marked **📥 Downloaded**, and works with **Watch in
+  Multiview** the same as any other recording.
 
 ## Notes & limitations
 
@@ -173,13 +182,14 @@ just fails with a clear error rather than breaking anything else.
   client-credentials OAuth pattern as Twitch — see the table above.
 - **No drag-to-resize grid** in this version — the grid auto-arranges by
   count. Would be a reasonable follow-up.
-- **Recording** downloads the full stream via `yt-dlp`, not just metadata —
-  a more direct implication of most platforms' Terms of Service (which
-  generally prohibit unauthorized downloading) than anything else this app
-  does. Personal DVR-style archival is common and broadly tolerated in
-  practice (it's exactly what `yt-dlp` itself exists for), but this is
-  meant for your own private, self-hosted use — not redistribution — same
-  as the rest of this app's "personal/LAN use, no auth" framing above.
+- **Recording** (live capture or a manual **+ Download video**) downloads
+  the full stream/video via `yt-dlp`, not just metadata — a more direct
+  implication of most platforms' Terms of Service (which generally
+  prohibit unauthorized downloading) than anything else this app does.
+  Personal DVR-style archival is common and broadly tolerated in practice
+  (it's exactly what `yt-dlp` itself exists for), but this is meant for
+  your own private, self-hosted use — not redistribution — same as the
+  rest of this app's "personal/LAN use, no auth" framing above.
 
 ## Project layout
 

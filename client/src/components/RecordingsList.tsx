@@ -131,6 +131,14 @@ function RecordingRow({ recording }: { recording: Recording }) {
                 ☁️
               </span>
             )}
+            {!recording.creator_id && (
+              <span
+                className="shrink-0 rounded bg-base-700 px-1.5 py-0.5 text-[10px] text-slate-300"
+                title="Manually downloaded — not tied to a tracked creator"
+              >
+                📥 Downloaded
+              </span>
+            )}
           </div>
           {recording.title && <p className="truncate text-xs text-slate-400">{recording.title}</p>}
           <p className="text-[11px] text-slate-500">

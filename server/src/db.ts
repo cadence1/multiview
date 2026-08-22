@@ -30,8 +30,21 @@ export type RecordingStatus = "recording" | "completed" | "stalled" | "low-disk"
 
 export interface RecordingRow {
   id: string;
+  /** Empty string means this recording isn't tied to a tracked creator at
+   * all — a manual "download any URL" recording (Phase 5), rather than one
+   * captured from a creator going live. A real id otherwise. Deliberately
+   * a sentinel rather than a nullable column: creator ids are always
+   * non-empty nanoid()s, so "" can never collide with a real one, and it
+   * avoids a NOT NULL-loosening migration (SQLite can't ALTER a column's
+   * constraint without a full table rebuild). */
   creator_id: string;
-  platform: Platform;
+  /** A creator-tied recording always matches Platform (it came from
+   * creator.platform). A manual download can come from *any* site yt-dlp
+   * recognizes, so this is deliberately looser than CreatorRow.platform —
+   * see recorder.ts's downloadVideo/platformFromExtractor. Purely a
+   * display label at that point, not something routed through a live
+   * platform adapter. */
+  platform: string;
   display_name: string;
   title: string | null;
   thumbnail_file_name: string | null;

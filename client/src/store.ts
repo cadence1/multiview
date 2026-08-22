@@ -105,6 +105,7 @@ interface MultiviewState {
   toggleRecordNext: (creator: Creator) => Promise<void>;
   refreshRecordings: () => Promise<void>;
   startRecording: (creatorId: string) => Promise<void>;
+  downloadVideo: (url: string) => Promise<void>;
   stopRecording: (id: string) => Promise<void>;
   deleteRecording: (id: string) => Promise<void>;
   refreshStorageStats: () => Promise<void>;
@@ -338,6 +339,11 @@ export const useStore = create<MultiviewState>((set, get) => ({
 
   startRecording: async (creatorId) => {
     const recording = await api.startRecording(creatorId);
+    set((state) => ({ recordings: [recording, ...state.recordings] }));
+  },
+
+  downloadVideo: async (url) => {
+    const recording = await api.downloadVideo(url);
     set((state) => ({ recordings: [recording, ...state.recordings] }));
   },
 

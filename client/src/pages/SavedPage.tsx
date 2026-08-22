@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { Link } from "react-router-dom";
 import { useStore } from "../store.js";
 import RecordingsList, { StorageBar } from "../components/RecordingsList.js";
+import DownloadVideoForm from "../components/DownloadVideoForm.js";
 
 const RECORDINGS_POLL_MS = 30_000;
 
@@ -37,7 +38,9 @@ export default function SavedPage() {
         <span className="justify-self-center text-sm font-semibold tracking-wide text-slate-300">
           Saved Recordings
         </span>
-        <span />
+        <div className="justify-self-end">
+          <DownloadVideoForm />
+        </div>
       </header>
 
       <StorageBar />
