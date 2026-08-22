@@ -22,8 +22,11 @@ export interface CreatorRow {
 // noticing the stream ended) — see recorder.ts's stall watcher. Kept
 // separate from "completed" so it's obviously distinguishable in the UI,
 // since a stalled recording is likely truncated/incomplete even though a
-// file does exist for it.
-export type RecordingStatus = "recording" | "completed" | "stalled" | "failed";
+// file does exist for it. "low-disk" is the same idea for the other
+// automatic-stop reason — free space dropped below RECORDING_MIN_FREE_GB
+// mid-recording — kept distinct from "stalled" so the UI/logs say why it
+// actually stopped rather than a misleading "no progress detected".
+export type RecordingStatus = "recording" | "completed" | "stalled" | "low-disk" | "failed";
 
 export interface RecordingRow {
   id: string;

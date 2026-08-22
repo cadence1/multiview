@@ -46,6 +46,7 @@ const STATUS_STYLE: Record<RecordingStatus, string> = {
   recording: "bg-red-600/80 text-white",
   completed: "bg-base-700 text-slate-300",
   stalled: "bg-amber-600/80 text-white",
+  "low-disk": "bg-amber-600/80 text-white",
   failed: "bg-base-700 text-red-300",
 };
 
@@ -53,6 +54,7 @@ const STATUS_LABEL: Record<RecordingStatus, string> = {
   recording: "Recording",
   completed: "Saved",
   stalled: "Stalled",
+  "low-disk": "Low disk",
   failed: "Failed",
 };
 

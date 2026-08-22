@@ -113,6 +113,12 @@ just fails with a clear error rather than breaking anything else.
   themselves take up), the same thing `RECORDING_MIN_FREE_GB` checks
   against — so it's visible *why* a new recording might get refused before
   it happens, not just after.
+- `RECORDING_MIN_FREE_GB` (default 5) is a disk-full safety net, checked two
+  ways: a new recording refuses to *start* below that much free space, and
+  every currently-active recording is stopped (checked every 30s) if free
+  space drops below it mid-recording — whatever was captured up to that
+  point is kept and shows as **Low disk** in the list, same as a stalled
+  recording. Set to `0` to disable both checks.
 - Live recordings (manual or auto) are capped at `RECORDING_MAX_CONCURRENT`
   (default 4) simultaneously — past that, a new one is rejected outright
   rather than queued, since queueing something time-sensitive just means

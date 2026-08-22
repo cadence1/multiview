@@ -43,11 +43,14 @@ export const env = {
   kickClientSecret: process.env.KICK_CLIENT_SECRET || "",
   pollIntervalSeconds: Number(process.env.POLL_INTERVAL_SECONDS || 300),
   recordingsDir: resolveRecordingsDir(dataDir),
-  // Refuses to *start* a new recording below this much free disk space —
-  // not a retention/cleanup policy (there isn't one; recordings are only
-  // ever removed by an explicit delete), just a safety net against ever
-  // filling the disk completely. 0 disables the check entirely.
-  recordingMinFreeGb: Number(process.env.RECORDING_MIN_FREE_GB ?? 2),
+  // Refuses to *start* a new recording below this much free disk space, and
+  // also stops every currently-active recording if free space drops below
+  // it mid-recording (checked independently of the start-time gate — see
+  // recorder.ts's diskCheckInterval) — not a retention/cleanup policy
+  // (there isn't one; recordings are only ever removed by an explicit
+  // delete), just a safety net against ever filling the disk completely.
+  // 0 disables both checks entirely.
+  recordingMinFreeGb: Number(process.env.RECORDING_MIN_FREE_GB ?? 5),
   // Live recordings only (manual + auto-record) — a 5th concurrent attempt
   // is rejected outright rather than queued, since queueing something
   // time-sensitive just means missing the part spent waiting.

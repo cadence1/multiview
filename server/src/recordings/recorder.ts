@@ -20,6 +20,11 @@ import * as storage from "./storage.js";
 // "name.ts" produced "name.ts.mp4" on disk), which silently broke every
 // stat-by-assumed-filename check downstream.
 
+/** Why an automatic (non-manual) stop was requested — null means either
+ * still running or a manual/explicit stop, both of which finishRecording
+ * distinguishes some other way (see stopRequested). */
+type AutoStopReason = "stalled" | "low-disk" | null;
+
 interface ActiveRecording {
   recordingId: string;
   creatorId: string;
@@ -27,7 +32,7 @@ interface ActiveRecording {
   namePart: string;
   thumbnailFileName: string | null;
   stopRequested: boolean;
-  stalled: boolean;
+  autoStopReason: AutoStopReason;
   killTimer: NodeJS.Timeout | null;
   stallInterval: NodeJS.Timeout | null;
   lastSize: number;
@@ -45,6 +50,14 @@ const active = new Map<string, ActiveRecording>();
 const STALL_CHECK_INTERVAL_MS = 4 * 60 * 1000;
 const STALL_CHECK_COUNT_THRESHOLD = 2;
 const MIN_GROWTH_BYTES = 16 * 1024;
+
+// Disk space can be exhausted by an active recording much faster than the
+// 4-minute stall check would ever notice (that's watching for *no*
+// progress, this is watching for *too much*) — checked independently, on a
+// short interval, across every active recording at once rather than
+// per-recording, since free space is a whole-volume condition none of them
+// individually control.
+const DISK_CHECK_INTERVAL_MS = 30 * 1000;
 
 // SIGINT is yt-dlp's own documented graceful-stop signal for a live
 // download (finalizes the file rather than corrupting it) — but verified
@@ -138,10 +151,10 @@ function remux(sourceFileName: string, mp4FileName: string): Promise<boolean> {
   });
 }
 
-function requestStop(rec: ActiveRecording, stalled: boolean) {
+function requestStop(rec: ActiveRecording, autoStopReason: AutoStopReason) {
   if (rec.stopRequested) return; // never re-signal — a second SIGINT can hard-abort instead of finalizing
   rec.stopRequested = true;
-  rec.stalled = stalled;
+  rec.autoStopReason = autoStopReason;
   killTree(rec.process, "SIGINT");
   rec.killTimer = setTimeout(() => {
     console.warn(`[recorder] ${rec.recordingId} didn't stop within ${GRACEFUL_STOP_TIMEOUT_MS / 1000}s of SIGINT — force-killing`);
@@ -152,9 +165,26 @@ function requestStop(rec: ActiveRecording, stalled: boolean) {
 export function stopRecording(recordingId: string): { ok: boolean; error?: string } {
   const rec = active.get(recordingId);
   if (!rec) return { ok: false, error: "not currently recording" };
-  requestStop(rec, false);
+  requestStop(rec, null);
   return { ok: true };
 }
+
+/** Stops every active recording once free disk space drops below
+ * RECORDING_MIN_FREE_GB — see DISK_CHECK_INTERVAL_MS. requestStop is a
+ * no-op on a recording already stopping, so a still-below-threshold tick
+ * while the graceful stop is in flight just does nothing extra. */
+function checkDiskSpace() {
+  if (active.size === 0 || env.recordingMinFreeGb <= 0) return;
+  storage.hasEnoughFreeSpace().then((ok) => {
+    if (ok) return;
+    console.warn(
+      `[recorder] free disk space below ${env.recordingMinFreeGb}GB — stopping ${active.size} active recording(s)`
+    );
+    for (const rec of active.values()) requestStop(rec, "low-disk");
+  });
+}
+
+setInterval(checkDiskSpace, DISK_CHECK_INTERVAL_MS);
 
 async function finishRecording(rec: ActiveRecording, code: number | null, stderrTail: string) {
   if (rec.stallInterval) clearInterval(rec.stallInterval);
@@ -169,9 +199,12 @@ async function finishRecording(rec: ActiveRecording, code: number | null, stderr
   let status: RecordingStatus;
   let error: string | null = null;
 
-  if (rec.stalled) {
+  if (rec.autoStopReason === "stalled") {
     status = "stalled";
     error = "stopped automatically — no recording progress detected";
+  } else if (rec.autoStopReason === "low-disk") {
+    status = "low-disk";
+    error = `stopped automatically — free disk space dropped below ${env.recordingMinFreeGb}GB`;
   } else if (rec.stopRequested) {
     status = hasContent ? "completed" : "failed"; // an explicit manual stop is a clean end, but only if it actually captured something
   } else if (code === 0) {
@@ -289,7 +322,7 @@ export async function startRecording(creator: CreatorRow, status: CreatorStatus)
     namePart,
     thumbnailFileName,
     stopRequested: false,
-    stalled: false,
+    autoStopReason: null,
     killTimer: null,
     stallInterval: null,
     lastSize: 0,
@@ -306,7 +339,7 @@ export async function startRecording(creator: CreatorRow, status: CreatorStatus)
         if (rec.noGrowthCount >= STALL_CHECK_COUNT_THRESHOLD) {
           const minutes = (STALL_CHECK_INTERVAL_MS * STALL_CHECK_COUNT_THRESHOLD) / 60_000;
           console.warn(`[recorder] ${creator.display_name}'s recording looks stalled (no growth for ~${minutes}min) — stopping it`);
-          requestStop(rec, true);
+          requestStop(rec, "stalled");
         }
       } else {
         rec.noGrowthCount = 0;

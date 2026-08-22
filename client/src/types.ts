@@ -14,7 +14,7 @@ export interface Creator {
   record_next: 0 | 1;
 }
 
-export type RecordingStatus = "recording" | "completed" | "stalled" | "failed";
+export type RecordingStatus = "recording" | "completed" | "stalled" | "low-disk" | "failed";
 
 /** Stats for the whole volume backing RECORDINGS_DIR, not just the recordings themselves. */
 export interface VolumeStats {
