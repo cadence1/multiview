@@ -251,6 +251,15 @@ interface LiveParse {
   thumbnailUrl?: string;
   startTimestamp?: string;
   scheduledStartSeconds?: string;
+  /** True when YouTube's own playabilityStatus.reason says this is about
+   * to start ("...will begin in a few moments"/"...shortly") — a live,
+   * authoritative signal independent of scheduledStartSeconds, which can
+   * itself be stale (verified directly against a real stream: it reported
+   * this exact reason while its own scheduledStartTime pointed months into
+   * the future — evidently set once at creation and never updated when
+   * the creator went live early/manually instead of at the original
+   * scheduled time). */
+  isImminentReason: boolean;
 }
 
 function largestThumbnail(thumbnails: any[] | undefined): string | undefined {
@@ -269,9 +278,15 @@ function parseLivePage(html: string): LiveParse | null {
 
   const microformat = playerResponse?.microformat?.playerMicroformatRenderer;
   const liveBroadcastDetails = microformat?.liveBroadcastDetails;
-  const offlineSlate =
-    playerResponse?.playabilityStatus?.liveStreamability?.liveStreamabilityRenderer
-      ?.offlineSlate;
+  const playabilityStatus = playerResponse?.playabilityStatus;
+  // One level deeper than it looks — verified directly that the real path
+  // is offlineSlate.liveStreamOfflineSlateRenderer.scheduledStartTime, not
+  // offlineSlate.scheduledStartTime; the old code's primary lookup here
+  // never actually matched anything, silently falling through to the
+  // regex fallback below on every single call.
+  const offlineSlateRenderer =
+    playabilityStatus?.liveStreamability?.liveStreamabilityRenderer?.offlineSlate
+      ?.liveStreamOfflineSlateRenderer;
 
   const isLiveNow = Boolean(liveBroadcastDetails?.isLiveNow ?? videoDetails?.isLive);
   const isUpcoming = Boolean(videoDetails?.isUpcoming);
@@ -281,8 +296,21 @@ function parseLivePage(html: string): LiveParse | null {
     largestThumbnail(videoDetails?.thumbnail?.thumbnails) ||
     largestThumbnail(microformat?.thumbnail?.thumbnails);
   const startTimestamp: string | undefined = liveBroadcastDetails?.startTimestamp;
+  // Scoped to this one video's own player response (JSON.stringify of the
+  // already-isolated object), not the raw HTML — matching every other
+  // field above. The old fallback here (matchOne(html, ...)) scanned the
+  // *entire page*, which can pick up an unrelated video's scheduled time
+  // from a sidebar/recommendation shelf elsewhere on the page — exactly
+  // the cross-contamination extractJsonAfter's own module comment already
+  // warns about for other fields, just missed here.
   const scheduledStartSeconds: string | undefined =
-    offlineSlate?.scheduledStartTime || matchOne(html, /"scheduledStartTime":"(\d+)"/);
+    offlineSlateRenderer?.scheduledStartTime ||
+    matchOne(JSON.stringify(playerResponse), /"scheduledStartTime":"(\d+)"/);
+
+  const isImminentReason = Boolean(
+    typeof playabilityStatus?.reason === "string" &&
+      /begin.{0,20}(a few moments|shortly)/i.test(playabilityStatus.reason)
+  );
 
   return {
     videoId,
@@ -292,7 +320,117 @@ function parseLivePage(html: string): LiveParse | null {
     thumbnailUrl,
     startTimestamp,
     scheduledStartSeconds,
+    isImminentReason,
   };
+}
+
+/** Turns a parsed video into a CreatorStatus if it actually represents
+ * live/upcoming content, or null if it's neither (caller decides what
+ * "neither" means — offline for the primary check, "try the next
+ * candidate" for the grid fallback). Shared between getStatusFor's
+ * primary /live check and findLiveOrUpcomingViaGrid's fallback so the
+ * live/upcoming/window logic isn't duplicated between them. */
+function statusFromParse(creatorId: string, parsed: LiveParse): CreatorStatus | null {
+  const updatedAt = new Date().toISOString();
+
+  // Check isLiveNow first: a premiere/scheduled stream can carry stale
+  // isUpcoming:true for a few seconds after it actually goes live.
+  if (parsed.isLiveNow) {
+    return {
+      creatorId,
+      state: "live",
+      title: parsed.title,
+      thumbnailUrl: parsed.thumbnailUrl,
+      startTime: parsed.startTimestamp,
+      embedId: parsed.videoId,
+      updatedAt,
+    };
+  }
+
+  if (parsed.isUpcoming) {
+    const startTime = parsed.scheduledStartSeconds
+      ? new Date(Number(parsed.scheduledStartSeconds) * 1000).toISOString()
+      : undefined;
+    const startMs = startTime ? new Date(startTime).getTime() : undefined;
+    const withinWindow = startMs !== undefined && isWithinUpcomingWindow(startMs);
+
+    // Only surface it as "upcoming" once it's within the window — further
+    // out, stale by hours/days past its scheduled time (or with an unknown
+    // start time), it's reported as offline instead — *unless* the
+    // imminent-reason override fires, which trumps a scheduled time we
+    // already know can be wrong (see LiveParse's own doc comment).
+    if (withinWindow || parsed.isImminentReason) {
+      return {
+        creatorId,
+        state: "upcoming",
+        title: parsed.title,
+        thumbnailUrl: parsed.thumbnailUrl,
+        // A startTime we don't trust (the override case) is worse than
+        // none at all — but *some* value is still needed for the poller's
+        // fast lane to pick this up instead of waiting for the next
+        // regular poll (see isImminent in types.ts, which needs a
+        // startTime close to now) — "now" is an honest stand-in for
+        // "imminent" without claiming a precise time we don't actually
+        // have.
+        startTime: withinWindow ? startTime : updatedAt,
+        embedId: parsed.videoId,
+        updatedAt,
+      };
+    }
+  }
+
+  return null;
+}
+
+// Fallback-only, deliberately infrequent — see findLiveOrUpcomingViaGrid.
+const GRID_FALLBACK_COOLDOWN_MS = 10 * 60 * 1000;
+const lastGridFallbackAt = new Map<string, number>();
+
+/**
+ * /channel/{id}/live doesn't always redirect to whichever content is
+ * actually live/imminent — verified directly against a real channel where
+ * it pointed at an unrelated placeholder scheduled months out while the
+ * channel had an actual Premiere already playing. A Premiere in particular
+ * lives under the channel's regular "Videos" grid, not a live-specific
+ * one, and parses through the exact same isLiveNow/isUpcoming logic once
+ * you're looking at the right video (confirmed directly) — so this scans
+ * that grid for anything carrying a LIVE/PREMIERE badge and verifies each
+ * candidate's own watch page directly, rather than trusting /live's
+ * redirect. Deliberately capped (a handful of candidates) and cooled down
+ * per creator (only tried again after GRID_FALLBACK_COOLDOWN_MS) — an
+ * offline creator is the common case on most polls, and this only runs
+ * when the fast path already came back empty, so it isn't worth paying
+ * for on every single poll for every creator that's simply not live.
+ */
+async function findLiveOrUpcomingViaGrid(creator: CreatorRef): Promise<CreatorStatus | null> {
+  const lastAttempt = lastGridFallbackAt.get(creator.id);
+  if (lastAttempt !== undefined && Date.now() - lastAttempt < GRID_FALLBACK_COOLDOWN_MS) return null;
+  lastGridFallbackAt.set(creator.id, Date.now());
+
+  const html = await fetchText(`https://www.youtube.com/channel/${creator.platformId}/videos`);
+  if (!html) return null;
+  const data = extractJsonAfter(html, "var ytInitialData");
+  if (!data) return null;
+
+  const candidateIds: string[] = [];
+  function collect(node: unknown) {
+    if (candidateIds.length >= 3 || !node || typeof node !== "object") return;
+    const lvm = (node as any).lockupViewModel;
+    if (typeof lvm?.contentId === "string" && /"text":"(LIVE|PREMIERE)"/.test(JSON.stringify(lvm))) {
+      candidateIds.push(lvm.contentId);
+    }
+    for (const value of Object.values(node as Record<string, unknown>)) collect(value);
+  }
+  collect(data);
+
+  for (const videoId of candidateIds) {
+    const watchHtml = await fetchText(`https://www.youtube.com/watch?v=${videoId}`);
+    if (!watchHtml) continue;
+    const parsed = parseLivePage(watchHtml);
+    const status = parsed && statusFromParse(creator.id, parsed);
+    if (status) return status;
+  }
+  return null;
 }
 
 async function getStatusFor(creator: CreatorRef): Promise<CreatorStatus> {
@@ -312,48 +450,13 @@ async function getStatusFor(creator: CreatorRef): Promise<CreatorStatus> {
     console.warn(
       `[youtube] couldn't parse live page for ${creator.platformId} (${html.length} bytes, title: "${title}")`
     );
-    return offlineStatus(creator.id);
+    return (await findLiveOrUpcomingViaGrid(creator)) ?? offlineStatus(creator.id);
   }
 
-  const updatedAt = new Date().toISOString();
+  const status = statusFromParse(creator.id, parsed);
+  if (status) return status;
 
-  // Check isLiveNow first: a premiere/scheduled stream can carry stale
-  // isUpcoming:true for a few seconds after it actually goes live.
-  if (parsed.isLiveNow) {
-    return {
-      creatorId: creator.id,
-      state: "live",
-      title: parsed.title,
-      thumbnailUrl: parsed.thumbnailUrl,
-      startTime: parsed.startTimestamp,
-      embedId: parsed.videoId,
-      updatedAt,
-    };
-  }
-
-  if (parsed.isUpcoming) {
-    const startTime = parsed.scheduledStartSeconds
-      ? new Date(Number(parsed.scheduledStartSeconds) * 1000).toISOString()
-      : undefined;
-    const startMs = startTime ? new Date(startTime).getTime() : undefined;
-
-    // Only surface it as "upcoming" once it's within the window — further
-    // out, stale by hours/days past its scheduled time (or with an unknown
-    // start time), it's reported as offline instead.
-    if (startMs !== undefined && isWithinUpcomingWindow(startMs)) {
-      return {
-        creatorId: creator.id,
-        state: "upcoming",
-        title: parsed.title,
-        thumbnailUrl: parsed.thumbnailUrl,
-        startTime,
-        embedId: parsed.videoId,
-        updatedAt,
-      };
-    }
-  }
-
-  return offlineStatus(creator.id);
+  return (await findLiveOrUpcomingViaGrid(creator)) ?? offlineStatus(creator.id);
 }
 
 async function getStatuses(
