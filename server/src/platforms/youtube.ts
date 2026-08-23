@@ -460,20 +460,42 @@ function statusFromParse(creatorId: string, parsed: LiveParse): CreatorStatus | 
  * once (e.g. a stream hours out and a closer premiere), and page order in
  * the grid isn't guaranteed to put the soonest one first.
  */
-// Caches a grid candidate's own parsed watch-page result by video ID —
-// confirmed directly that the common case (a stale placeholder scheduled
-// hours/months out, or a genuinely-upcoming stream that isn't imminent yet)
-// gets re-fetched and re-parsed on every single poll even though nothing
-// about it has actually changed, since the grid scan itself now runs every
-// poll for any non-live creator (see this function's own doc comment).
+// Caches a video's own parsed watch-page result by video ID — written from
+// BOTH the primary /live check (getStatusFor) and the grid scan's own
+// per-candidate lookups (getCandidateParse), read only by the latter.
 //
-// Only ever reused when it's safe to be stale: never for a candidate that
-// was live last time (must always re-check freshly to notice it going
+// Two distinct jobs:
+//  1. Skip re-fetching a grid candidate whose own state can't have
+//     meaningfully changed — confirmed directly that the common case (a
+//     stale placeholder scheduled hours/months out, or a genuinely-upcoming
+//     stream that isn't imminent yet) gets re-fetched and re-parsed on
+//     every single poll even though nothing about it has actually changed,
+//     since the grid scan itself now runs every poll for any non-live
+//     creator (see findLiveOrUpcomingViaGrid's own doc comment).
+//  2. Give the grid scan a resilience fallback for a video it's never
+//     fetched itself at all. Confirmed directly against a real creator
+//     whose /live redirect is fully reliable (so she never touched the
+//     grid path while going live — no cache entry for her video ever got
+//     written from there): a single transient failure fetching /live fell
+//     through to the grid scan, which found her among its own candidates
+//     but had nothing cached for her specific video ID to fall back on when
+//     *that* fetch also failed — so she silently dropped out of
+//     consideration for that poll, and a genuinely different, lower-
+//     priority "upcoming" candidate won instead, despite her still being
+//     live the entire time. Writing every successful /live parse into this
+//     same cache (not just grid-candidate parses) closes that gap: the
+//     grid scan can now fall back to a recent, correct "live" reading for
+//     her even on a poll where both /live and her own watch page happen to
+//     fail together.
+//
+// Reused (job 1) only when it's safe to be stale: never for a candidate
+// that was live last time (must always re-check freshly to notice it going
 // offline), never for one with an unknown schedule (could go live with no
 // warning), and never for one whose scheduled time is imminent (see
-// isImminent — exactly when a transition might actually happen). Anything
-// else — the common case above — is fair game to skip re-fetching for a
-// few minutes.
+// isImminent — exactly when a transition might actually happen). Job 2 (an
+// outright fetch failure) always falls back to whatever's cached,
+// regardless of staleness — stale beats nothing when the alternative is
+// silently dropping a real candidate.
 const CANDIDATE_CACHE_TTL_MS = 5 * 60 * 1000;
 const candidateParseCache = new Map<string, { parsed: LiveParse; fetchedAt: number }>();
 
@@ -481,6 +503,10 @@ function isSafeToCacheParse(parsed: LiveParse): boolean {
   if (parsed.isLiveNow) return false;
   if (!parsed.scheduledStartSeconds) return false;
   return !isImminent(Number(parsed.scheduledStartSeconds) * 1000);
+}
+
+function cacheParse(parsed: LiveParse): void {
+  candidateParseCache.set(parsed.videoId, { parsed, fetchedAt: Date.now() });
 }
 
 async function getCandidateParse(videoId: string): Promise<LiveParse | null> {
@@ -491,7 +517,7 @@ async function getCandidateParse(videoId: string): Promise<LiveParse | null> {
   const watchHtml = await fetchText(`https://www.youtube.com/watch?v=${videoId}`);
   if (!watchHtml) return cached?.parsed ?? null; // fetch failed — stale cache beats nothing
   const parsed = parseLivePage(watchHtml);
-  if (parsed) candidateParseCache.set(videoId, { parsed, fetchedAt: Date.now() });
+  if (parsed) cacheParse(parsed);
   return parsed;
 }
 
@@ -550,6 +576,14 @@ async function getStatusFor(creator: CreatorRef): Promise<CreatorStatus> {
   // candidate across both tabs.
   if (html) {
     const parsed = parseLivePage(html);
+    if (parsed) {
+      // Written here too, not just from the grid scan's own candidate
+      // checks — see candidateParseCache's doc comment for why a video
+      // that only ever resolves via this fast path still needs an entry
+      // here, as a resilience fallback for a later poll where /live has a
+      // transient failure and the grid scan needs this exact video again.
+      cacheParse(parsed);
+    }
     if (parsed?.isLiveNow) {
       const status = statusFromParse(creator.id, parsed);
       if (status) return status;
