@@ -392,15 +392,22 @@ function statusFromParse(creatorId: string, parsed: LiveParse): CreatorStatus | 
  * months-out) placeholder to fall back on.
  *
  * Deliberately capped to a handful of candidates, but runs on every poll
- * where the fast path comes back empty — no cooldown. An earlier version
- * cooled this down per creator and treated a skipped-due-to-cooldown check
- * as "offline"; for a creator whose /live simply never resolves (this
- * fallback is the *only* thing finding them at all, every single poll),
- * that meant flapping between correctly "live" and falsely "offline" every
- * cooldown window — confirmed directly against a real creator still
- * actually live who intermittently vanished from the UI this way. Getting
- * it right matters more than the extra requests this costs per poll for a
- * creator /live doesn't resolve.
+ * where /live didn't confirm the creator is *actually* live right now — no
+ * cooldown. An earlier version cooled this down per creator and treated a
+ * skipped-due-to-cooldown check as "offline"; for a creator whose /live
+ * simply never resolves (this fallback is the *only* thing finding them
+ * at all, every single poll), that meant flapping between correctly
+ * "live" and falsely "offline" every cooldown window — confirmed directly
+ * against a real creator still actually live who intermittently vanished
+ * from the UI this way. Getting it right matters more than the extra
+ * requests this costs per poll for a creator /live doesn't resolve.
+ *
+ * Checks every candidate rather than stopping at the first one that
+ * resolves, and returns the *soonest* upcoming one (live always wins
+ * outright over any upcoming candidate) — confirmed directly that a
+ * channel can have two genuinely distinct upcoming candidates live at
+ * once (e.g. a stream hours out and a closer premiere), and page order in
+ * the grid isn't guaranteed to put the soonest one first.
  */
 async function findLiveOrUpcomingViaGrid(creator: CreatorRef): Promise<CreatorStatus | null> {
   const candidateIds: string[] = [];
@@ -425,38 +432,58 @@ async function findLiveOrUpcomingViaGrid(creator: CreatorRef): Promise<CreatorSt
     collect(data);
   }
 
+  let soonestUpcoming: { status: CreatorStatus; startMs: number } | null = null;
   for (const videoId of candidateIds) {
     const watchHtml = await fetchText(`https://www.youtube.com/watch?v=${videoId}`);
     if (!watchHtml) continue;
     const parsed = parseLivePage(watchHtml);
     const status = parsed && statusFromParse(creator.id, parsed);
-    if (status) return status;
+    if (!status) continue;
+    if (status.state === "live") return status;
+    const startMs = status.startTime ? new Date(status.startTime).getTime() : Infinity;
+    if (!soonestUpcoming || startMs < soonestUpcoming.startMs) {
+      soonestUpcoming = { status, startMs };
+    }
   }
-  return null;
+  return soonestUpcoming?.status ?? null;
 }
 
 async function getStatusFor(creator: CreatorRef): Promise<CreatorStatus> {
   const html = await fetchText(
     `https://www.youtube.com/channel/${creator.platformId}/live`
   );
-  if (!html) return offlineStatus(creator.id);
 
-  const parsed = parseLivePage(html);
-  if (!parsed) {
-    // The page loaded fine (fetchText already logs actual HTTP/network
-    // failures) but didn't contain the JSON blob we scrape — e.g. YouTube
-    // served a bot-check/consent interstitial or A/B-tested a different
-    // page shape instead of the usual live page. The page's own <title>
-    // is usually enough to tell which, without dumping the whole page.
-    const title = matchOne(html, /<title>([^<]*)<\/title>/) || "(no <title>)";
-    console.warn(
-      `[youtube] couldn't parse live page for ${creator.platformId} (${html.length} bytes, title: "${title}")`
-    );
-    return (await findLiveOrUpcomingViaGrid(creator)) ?? offlineStatus(creator.id);
+  // /live is only trustworthy for "is this creator live *right now*" — it
+  // redirects to whatever single video YouTube currently associates with
+  // the channel's live slot, which verified directly has nothing to do
+  // with what's actually upcoming: it can point at a stale, months-old
+  // scheduled placeholder while a genuine premiere or near-term stream
+  // sits on /streams or /videos instead, invisible from here. So an
+  // "upcoming" result from /live's own parse is deliberately NOT trusted
+  // as final — only isLiveNow short-circuits here. Everything else (not
+  // live, upcoming, unparseable) always defers to the grid scan, which is
+  // authoritative for upcoming/premiere content and picks the soonest
+  // candidate across both tabs.
+  if (html) {
+    const parsed = parseLivePage(html);
+    if (parsed?.isLiveNow) {
+      const status = statusFromParse(creator.id, parsed);
+      if (status) return status;
+    } else if (!parsed) {
+      // The page loaded fine (fetchText already logs actual HTTP/network
+      // failures) but didn't contain the JSON blob we scrape — e.g. YouTube
+      // served a bot-check/consent interstitial or A/B-tested a different
+      // page shape instead of the usual live page. The page's own <title>
+      // is usually enough to tell which, without dumping the whole page.
+      // Not fatal either way — falls through to the grid scan below.
+      const title = matchOne(html, /<title>([^<]*)<\/title>/) || "(no <title>)";
+      console.warn(
+        `[youtube] couldn't parse live page for ${creator.platformId} (${html.length} bytes, title: "${title}")`
+      );
+    }
+  } else {
+    console.warn(`[youtube] couldn't fetch /live for ${creator.platformId}, falling back to grid scan`);
   }
-
-  const status = statusFromParse(creator.id, parsed);
-  if (status) return status;
 
   return (await findLiveOrUpcomingViaGrid(creator)) ?? offlineStatus(creator.id);
 }
