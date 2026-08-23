@@ -74,14 +74,27 @@ export async function hasEnoughFreeSpace(): Promise<boolean> {
   return stats.freeBytes / 1024 ** 3 >= env.recordingMinFreeGb;
 }
 
-export async function statFile(fileName: string): Promise<{ size: number } | null> {
+export async function statFile(fileName: string): Promise<{ size: number; mtimeMs: number } | null> {
   const abs = resolveSafe(fileName);
   if (!abs) return null;
   try {
     const stat = await fsPromises.stat(abs);
-    return { size: stat.size };
+    return { size: stat.size, mtimeMs: stat.mtimeMs };
   } catch {
     return null;
+  }
+}
+
+/** Every plain file directly in RECORDINGS_DIR — used by the orphan-file
+ * sweep in recorder.ts to find anything nothing in the app still
+ * references. Not recursive: this directory has never had subdirectories
+ * of its own. */
+export async function listFiles(): Promise<string[]> {
+  try {
+    const entries = await fsPromises.readdir(env.recordingsDir, { withFileTypes: true });
+    return entries.filter((e) => e.isFile()).map((e) => e.name);
+  } catch {
+    return [];
   }
 }
 

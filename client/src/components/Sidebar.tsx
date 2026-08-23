@@ -323,6 +323,7 @@ export default function Sidebar({ onAddCreator, onClose }: Props) {
                             startRecording(creator.id).catch((err) => showNotice(err.message));
                           }
                         }}
+                        onRecordFromStart={() => startRecording(creator.id, true).catch((err) => showNotice(err.message))}
                         onToggleAutoRecord={() => toggleAutoRecord(creator).catch((err) => showNotice(err.message))}
                         onToggleRecordNext={() => toggleRecordNext(creator).catch((err) => showNotice(err.message))}
                         onDelete={() => handleDeleteOne(creator)}

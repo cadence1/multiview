@@ -10,7 +10,7 @@ const MENU_WIDTH = 224;
 // generous estimate to clamp against, since the item count here is small
 // and fixed enough that it won't run away from this. Includes the name
 // header below.
-const MENU_HEIGHT_ESTIMATE = 240;
+const MENU_HEIGHT_ESTIMATE = 264;
 
 interface Props {
   anchorRect: DOMRect;
@@ -24,6 +24,7 @@ interface Props {
   recordingSupported: boolean;
   isRecording: boolean;
   onToggleRecording: () => void;
+  onRecordFromStart: () => void;
   onToggleAutoRecord: () => void;
   onToggleRecordNext: () => void;
   onDelete: () => void;
@@ -52,6 +53,7 @@ export default function CreatorOptionsMenu({
   recordingSupported,
   isRecording,
   onToggleRecording,
+  onRecordFromStart,
   onToggleAutoRecord,
   onToggleRecordNext,
   onDelete,
@@ -79,6 +81,9 @@ export default function CreatorOptionsMenu({
   const left = Math.min(anchorRect.right + 6, window.innerWidth - MENU_WIDTH - 8);
 
   const canRecordNow = recordingSupported && (isRecording || state === "live");
+  // Only offered before a recording actually starts — once one's running
+  // there's nothing left to choose a start point for.
+  const canRecordFromStart = recordingSupported && state === "live" && !isRecording;
   // Redundant once auto_record is on (that already covers the next session
   // too) — mirrors the same subsumption CreatorOptionsMenu's caller applies
   // server-side (PATCH /:id) when auto_record gets turned on.
@@ -144,6 +149,16 @@ export default function CreatorOptionsMenu({
             {isRecording ? "Recording" : "Record now"}
           </span>
           <ToggleSwitch on={isRecording} />
+        </button>
+      )}
+
+      {canRecordFromStart && (
+        <button
+          onClick={onRecordFromStart}
+          className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-slate-200 hover:bg-base-800"
+          title="Capture from the beginning instead of from now — works for a YouTube Premiere (the file already exists in full) and may work for an ordinary live stream depending on how much of it YouTube still has available"
+        >
+          <span aria-hidden>⏮</span> Record from start
         </button>
       )}
 

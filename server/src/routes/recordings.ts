@@ -18,7 +18,7 @@ recordingsRouter.get("/storage", async (_req, res) => {
 });
 
 recordingsRouter.post("/", async (req, res) => {
-  const { creatorId } = req.body ?? {};
+  const { creatorId, fromStart } = req.body ?? {};
   if (typeof creatorId !== "string" || !creatorId) {
     return res.status(400).json({ error: "creatorId is required" });
   }
@@ -28,7 +28,7 @@ recordingsRouter.post("/", async (req, res) => {
   const status = statusCache.get(creatorId);
   if (!status) return res.status(409).json({ error: "no known status for this creator yet" });
 
-  const result = await recorder.startRecording(creator, status);
+  const result = await recorder.startRecording(creator, status, { fromStart: Boolean(fromStart) });
   if (!result.ok) return res.status(409).json({ error: result.error });
   res.status(201).json(result.recording);
 });

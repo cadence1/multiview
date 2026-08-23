@@ -20,6 +20,7 @@ interface Props {
   recordingSupported: boolean;
   isRecording: boolean;
   onToggleRecording: () => void;
+  onRecordFromStart: () => void;
   onToggleAutoRecord: () => void;
   onToggleRecordNext: () => void;
   onDelete: () => void;
@@ -38,6 +39,7 @@ export default function CreatorRow({
   recordingSupported,
   isRecording,
   onToggleRecording,
+  onRecordFromStart,
   onToggleAutoRecord,
   onToggleRecordNext,
   onDelete,
@@ -213,6 +215,7 @@ export default function CreatorRow({
           recordingSupported={recordingSupported}
           isRecording={isRecording}
           onToggleRecording={onToggleRecording}
+          onRecordFromStart={onRecordFromStart}
           onToggleAutoRecord={onToggleAutoRecord}
           onToggleRecordNext={onToggleRecordNext}
           onDelete={onDelete}

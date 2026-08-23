@@ -45,10 +45,10 @@ export const api = {
       body: JSON.stringify({ recordNext }),
     }),
   listRecordings: () => request<Recording[]>("/recordings"),
-  startRecording: (creatorId: string) =>
+  startRecording: (creatorId: string, fromStart?: boolean) =>
     request<Recording>("/recordings", {
       method: "POST",
-      body: JSON.stringify({ creatorId }),
+      body: JSON.stringify({ creatorId, fromStart }),
     }),
   stopRecording: (id: string) => request<void>(`/recordings/${id}/stop`, { method: "POST" }),
   downloadVideo: (url: string) =>

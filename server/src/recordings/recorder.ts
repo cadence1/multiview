@@ -194,6 +194,62 @@ function checkDiskSpace() {
 
 setInterval(checkDiskSpace, DISK_CHECK_INTERVAL_MS);
 
+// How long a file must sit unrecognized before the sweep below treats it as
+// orphaned rather than a legitimate in-flight recording's own working file —
+// guards the narrow window between yt-dlp actually creating a file on disk
+// and this recording being registered in `active` (both happen synchronously
+// before spawn() returns, so in practice this margin is generous, not
+// tight).
+const ORPHAN_MIN_AGE_MS = 10 * 60 * 1000; // 10 minutes
+const ORPHAN_SWEEP_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
+
+/**
+ * Sweeps RECORDINGS_DIR for files nothing in this app still references —
+ * confirmed directly that yt-dlp can leave its own intermediate fragment
+ * files (e.g. "<name>.f137.mp4", "<name>.f140.mp4") and ".ytdl" sidecar
+ * files behind on disk even after finishing a clean merge, and
+ * deleteRecording only ever knew to remove the DB row's own tracked
+ * file_name/thumbnail_file_name, never yt-dlp's working files alongside it.
+ * Same risk after an unclean server restart mid-recording.
+ *
+ * RECORDINGS_DIR is exclusively this app's own working directory — never a
+ * user-shared folder — so anything on disk that isn't a currently-tracked
+ * recording's file and isn't part of a still-active recording is debris,
+ * not something to be cautious about removing. The active-recording
+ * namePart check (not just the age margin) is what actually protects an
+ * in-flight recording's own fragments, since a long capture can easily have
+ * fragments older than ORPHAN_MIN_AGE_MS that are still very much in use.
+ */
+async function cleanupOrphanedFiles() {
+  const entries = await storage.listFiles();
+  if (entries.length === 0) return;
+
+  const known = new Set<string>();
+  for (const row of statements.listRecordings.all()) {
+    known.add(row.file_name);
+    if (row.thumbnail_file_name) known.add(row.thumbnail_file_name);
+  }
+  const activeNameParts = Array.from(active.values(), (rec) => rec.namePart);
+
+  const now = Date.now();
+  for (const fileName of entries) {
+    if (known.has(fileName)) continue;
+    if (activeNameParts.some((namePart) => fileName.startsWith(namePart))) continue;
+    const stat = await storage.statFile(fileName);
+    if (!stat || now - stat.mtimeMs < ORPHAN_MIN_AGE_MS) continue;
+    await storage.deleteFile(fileName);
+    console.log(`[recorder] cleanup: removed orphaned file ${fileName}`);
+  }
+}
+
+setInterval(() => {
+  cleanupOrphanedFiles().catch((err) => console.error("[recorder] orphan cleanup failed:", err));
+}, ORPHAN_SWEEP_INTERVAL_MS);
+// Also once at startup — catches anything left over from a crash or an
+// unclean restart while a recording was in flight, without waiting a full
+// sweep interval to notice.
+cleanupOrphanedFiles().catch((err) => console.error("[recorder] orphan cleanup failed:", err));
+
 async function finishRecording(rec: ActiveRecording, code: number | null, stderrTail: string) {
   if (rec.stallInterval) clearInterval(rec.stallInterval);
   if (rec.killTimer) clearTimeout(rec.killTimer);
@@ -311,7 +367,28 @@ export interface StartRecordingResult {
   error?: string;
 }
 
-export async function startRecording(creator: CreatorRow, status: CreatorStatus): Promise<StartRecordingResult> {
+export interface StartRecordingOptions {
+  /** Passes yt-dlp --live-from-start instead of joining at the live edge.
+   * Meaningful for two different reasons depending on what's actually
+   * airing: for a YouTube Premiere, the whole file already exists on
+   * YouTube's CDN before and during the "premiere" (verified directly —
+   * yt-dlp reports the exact same is_live/HLS shape for an in-progress
+   * premiere as a genuine live stream, so there's no way to special-case
+   * premieres automatically), so this recovers everything from the start
+   * even if recording begins well after it began airing. For a genuine
+   * live stream it depends entirely on how much of the DVR window YouTube
+   * still has available — may only partially succeed, or yt-dlp may error,
+   * for a stream that started long enough ago. Not all extractors support
+   * it at all (confirmed Twitch does not keep a rewindable live buffer);
+   * passing it there is harmless — yt-dlp just can't honor it. */
+  fromStart?: boolean;
+}
+
+export async function startRecording(
+  creator: CreatorRow,
+  status: CreatorStatus,
+  opts: StartRecordingOptions = {}
+): Promise<StartRecordingResult> {
   if (creator.platform === "rplay") {
     return { ok: false, error: "RPlay recordings aren't supported — no extraction tool covers it." };
   }
@@ -368,7 +445,10 @@ export async function startRecording(creator: CreatorRow, status: CreatorStatus)
     platform: creator.platform,
   });
 
-  const child = spawn("yt-dlp", [sourceUrl, "-o", outputTemplate, "--no-playlist", "--no-part", "--newline"], {
+  const args = [sourceUrl, "-o", outputTemplate, "--no-playlist", "--no-part", "--newline"];
+  if (opts.fromStart) args.push("--live-from-start");
+
+  const child = spawn("yt-dlp", args, {
     stdio: ["ignore", "ignore", "pipe"],
     // detached so killTree's process-group signal (POSIX) reaches yt-dlp's
     // own ffmpeg child too, not just yt-dlp itself — see killTree's comment.
