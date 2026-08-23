@@ -251,15 +251,6 @@ interface LiveParse {
   thumbnailUrl?: string;
   startTimestamp?: string;
   scheduledStartSeconds?: string;
-  /** True when YouTube's own playabilityStatus.reason says this is about
-   * to start ("...will begin in a few moments"/"...shortly") — a live,
-   * authoritative signal independent of scheduledStartSeconds, which can
-   * itself be stale (verified directly against a real stream: it reported
-   * this exact reason while its own scheduledStartTime pointed months into
-   * the future — evidently set once at creation and never updated when
-   * the creator went live early/manually instead of at the original
-   * scheduled time). */
-  isImminentReason: boolean;
 }
 
 function largestThumbnail(thumbnails: any[] | undefined): string | undefined {
@@ -307,11 +298,6 @@ function parseLivePage(html: string): LiveParse | null {
     offlineSlateRenderer?.scheduledStartTime ||
     matchOne(JSON.stringify(playerResponse), /"scheduledStartTime":"(\d+)"/);
 
-  const isImminentReason = Boolean(
-    typeof playabilityStatus?.reason === "string" &&
-      /begin.{0,20}(a few moments|shortly)/i.test(playabilityStatus.reason)
-  );
-
   return {
     videoId,
     isLiveNow,
@@ -320,7 +306,6 @@ function parseLivePage(html: string): LiveParse | null {
     thumbnailUrl,
     startTimestamp,
     scheduledStartSeconds,
-    isImminentReason,
   };
 }
 
@@ -355,24 +340,27 @@ function statusFromParse(creatorId: string, parsed: LiveParse): CreatorStatus | 
     const withinWindow = startMs !== undefined && isWithinUpcomingWindow(startMs);
 
     // Only surface it as "upcoming" once it's within the window — further
-    // out, stale by hours/days past its scheduled time (or with an unknown
-    // start time), it's reported as offline instead — *unless* the
-    // imminent-reason override fires, which trumps a scheduled time we
-    // already know can be wrong (see LiveParse's own doc comment).
-    if (withinWindow || parsed.isImminentReason) {
+    // out, stale by hours/days (or months — verified directly against
+    // three real channels where the "next scheduled" video's own
+    // scheduledStartTime was months in the past, evidently an abandoned
+    // placeholder) past its scheduled time, or with an unknown start
+    // time, it's reported as offline instead.
+    //
+    // playabilityStatus.reason ("This live event will begin in a few
+    // moments.") looks like a live countdown signal but isn't one — it's
+    // YouTube's static text for *any* not-yet-started broadcast, shown
+    // identically whether it's genuinely a minute away or, as verified
+    // directly, months overdue. An earlier version of this function
+    // trusted it as an override and that was wrong: it made any channel
+    // with a stale abandoned placeholder show as permanently "upcoming".
+    // Removed rather than kept as a signal for anything.
+    if (withinWindow) {
       return {
         creatorId,
         state: "upcoming",
         title: parsed.title,
         thumbnailUrl: parsed.thumbnailUrl,
-        // A startTime we don't trust (the override case) is worse than
-        // none at all — but *some* value is still needed for the poller's
-        // fast lane to pick this up instead of waiting for the next
-        // regular poll (see isImminent in types.ts, which needs a
-        // startTime close to now) — "now" is an honest stand-in for
-        // "imminent" without claiming a precise time we don't actually
-        // have.
-        startTime: withinWindow ? startTime : updatedAt,
+        startTime,
         embedId: parsed.videoId,
         updatedAt,
       };
@@ -381,10 +369,6 @@ function statusFromParse(creatorId: string, parsed: LiveParse): CreatorStatus | 
 
   return null;
 }
-
-// Fallback-only, deliberately infrequent — see findLiveOrUpcomingViaGrid.
-const GRID_FALLBACK_COOLDOWN_MS = 10 * 60 * 1000;
-const lastGridFallbackAt = new Map<string, number>();
 
 /**
  * /channel/{id}/live doesn't always redirect to whichever content is
@@ -396,17 +380,19 @@ const lastGridFallbackAt = new Map<string, number>();
  * you're looking at the right video (confirmed directly) — so this scans
  * that grid for anything carrying a LIVE/PREMIERE badge and verifies each
  * candidate's own watch page directly, rather than trusting /live's
- * redirect. Deliberately capped (a handful of candidates) and cooled down
- * per creator (only tried again after GRID_FALLBACK_COOLDOWN_MS) — an
- * offline creator is the common case on most polls, and this only runs
- * when the fast path already came back empty, so it isn't worth paying
- * for on every single poll for every creator that's simply not live.
+ * redirect. Deliberately capped to a handful of candidates, but runs on
+ * every poll where the fast path comes back empty — no cooldown. An
+ * earlier version cooled this down per creator and treated a
+ * skipped-due-to-cooldown check as "offline"; for a creator whose /live
+ * simply never resolves (this fallback is the *only* thing finding them
+ * at all, every single poll), that meant flapping between correctly
+ * "live" and falsely "offline" every cooldown window — confirmed
+ * directly against a real creator still actually live who intermittently
+ * vanished from the UI this way. Getting it right matters more than the
+ * one extra request this costs per poll for a creator /live doesn't
+ * resolve.
  */
 async function findLiveOrUpcomingViaGrid(creator: CreatorRef): Promise<CreatorStatus | null> {
-  const lastAttempt = lastGridFallbackAt.get(creator.id);
-  if (lastAttempt !== undefined && Date.now() - lastAttempt < GRID_FALLBACK_COOLDOWN_MS) return null;
-  lastGridFallbackAt.set(creator.id, Date.now());
-
   const html = await fetchText(`https://www.youtube.com/channel/${creator.platformId}/videos`);
   if (!html) return null;
   const data = extractJsonAfter(html, "var ytInitialData");
