@@ -204,6 +204,51 @@ const ORPHAN_MIN_AGE_MS = 10 * 60 * 1000; // 10 minutes
 const ORPHAN_SWEEP_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
 
 /**
+ * Any DB row still marked "recording" when this module first loads is
+ * guaranteed stale, not just probably stale — `active` starts empty every
+ * time this process starts, and a row can only ever be tracked there while
+ * its own startRecording()/downloadVideo() call is live in *this* process.
+ * A "recording" row surviving into a fresh process means the previous
+ * process exited (crash, redeploy, manual restart) before it got the
+ * chance to call finishRecording for it — confirmed directly against a
+ * real stuck row from an actual restart: the UI kept showing "RECORDING"
+ * with a live-looking "Started Nh ago", and Stop always failed with "not
+ * currently recording", because there was truly nothing in this process's
+ * `active` map to stop.
+ *
+ * Reconciles each one exactly the way an ordinary finishRecording call
+ * would — namePart is recovered from the row's own still-untouched
+ * placeholder file_name (only finishRecording ever overwrites it, and this
+ * row never got that far), so storage.findRecordingFile can find whatever
+ * the interrupted process actually produced. Real partial content is kept
+ * (status "completed"), same as any other interrupted-but-recovered
+ * capture; nothing worth keeping means "failed" — either way the row stops
+ * being permanently stuck.
+ */
+async function reconcileInterruptedRecordings() {
+  const stale = statements.listRecordings.all().filter((r) => r.status === "recording");
+  for (const row of stale) {
+    const isDownload = row.creator_id === ""; // see db.ts's RecordingRow.creator_id doc comment
+    const namePart = row.file_name.replace(isDownload ? /\.mp4$/ : /\.ts$/, "");
+    console.warn(`[recorder] reconciling interrupted recording ${row.id} (${row.display_name}) from a previous process`);
+    await finishRecording(
+      {
+        recordingId: row.id,
+        namePart,
+        thumbnailFileName: row.thumbnail_file_name,
+        stallInterval: null,
+        killTimer: null,
+        stopRequested: false,
+        autoStopReason: null,
+        isDownload,
+      },
+      null,
+      "interrupted — the server restarted while this recording was in progress and it couldn't be resumed"
+    );
+  }
+}
+
+/**
  * Sweeps RECORDINGS_DIR for files nothing in this app still references —
  * confirmed directly that yt-dlp can leave its own intermediate fragment
  * files (e.g. "<name>.f137.mp4", "<name>.f140.mp4") and ".ytdl" sidecar
@@ -245,16 +290,65 @@ async function cleanupOrphanedFiles() {
 setInterval(() => {
   cleanupOrphanedFiles().catch((err) => console.error("[recorder] orphan cleanup failed:", err));
 }, ORPHAN_SWEEP_INTERVAL_MS);
-// Also once at startup — catches anything left over from a crash or an
-// unclean restart while a recording was in flight, without waiting a full
-// sweep interval to notice.
-cleanupOrphanedFiles().catch((err) => console.error("[recorder] orphan cleanup failed:", err));
+// Reconciliation first, then the orphan-file sweep — reconciling can itself
+// rename/produce a file (finishRecording's own remux step), and the sweep
+// re-reads the DB fresh each run, so running in this order means the sweep
+// never has to reason about a row still mid-reconciliation.
+reconcileInterruptedRecordings()
+  .then(() => cleanupOrphanedFiles())
+  .catch((err) => console.error("[recorder] startup recovery failed:", err));
 
-async function finishRecording(rec: ActiveRecording, code: number | null, stderrTail: string) {
+/** Exactly the fields finishRecording actually reads — ActiveRecording
+ * satisfies this structurally, but reconcileInterruptedRecordings (below)
+ * needs to call finishRecording for a recording that was never a real
+ * ActiveRecording in *this* process (no live child process, no real
+ * timers), so the parameter is typed to only what's actually needed rather
+ * than the full live-recording shape. */
+interface FinishableRecording {
+  recordingId: string;
+  namePart: string;
+  thumbnailFileName: string | null;
+  stallInterval: NodeJS.Timeout | null;
+  killTimer: NodeJS.Timeout | null;
+  stopRequested: boolean;
+  autoStopReason: AutoStopReason;
+  isDownload: boolean;
+}
+
+async function finishRecording(rec: FinishableRecording, code: number | null, stderrTail: string) {
   if (rec.stallInterval) clearInterval(rec.stallInterval);
   if (rec.killTimer) clearTimeout(rec.killTimer);
   active.delete(rec.recordingId);
 
+  // Everything below this point is best-effort finalize work (find the
+  // produced file, remux it, offload to S3) — confirmed directly that a
+  // recording can get stuck at "recording" forever, with Stop permanently
+  // failing ("not currently recording"), if any of it throws: this
+  // recording is already gone from `active` (just above), so an uncaught
+  // exception here means the DB row never gets its terminal status write
+  // at all, and nothing else in the app will ever revisit it. No server
+  // restart required — a yt-dlp crash alone is enough to trigger this, if
+  // whatever state it leaves behind trips up something on the way to that
+  // write. The try/catch below guarantees the row always reaches a
+  // terminal status no matter what fails internally.
+  try {
+    await finalizeRecording(rec, code, stderrTail);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`[recorder] ${rec.recordingId} failed to finalize cleanly — marking failed:`, message);
+    try {
+      statements.finishRecording.run(rec.recordingId, "failed", new Date().toISOString(), rec.namePart, null, `finalize error: ${message}`.slice(0, 500));
+    } catch (dbErr) {
+      // If even this minimal write fails, there's nothing more this
+      // function can do — reconcileInterruptedRecordings will pick the row
+      // up on the next server start, same as any other stuck "recording"
+      // row (see its own doc comment).
+      console.error(`[recorder] ${rec.recordingId} could not even be marked failed:`, dbErr);
+    }
+  }
+}
+
+async function finalizeRecording(rec: FinishableRecording, code: number | null, stderrTail: string) {
   const endedAt = new Date().toISOString();
   const producedFileName = await storage.findRecordingFile(rec.namePart, rec.thumbnailFileName);
   const producedStat = producedFileName ? await storage.statFile(producedFileName) : null;
@@ -314,12 +408,19 @@ async function finishRecording(rec: ActiveRecording, code: number | null, stderr
   console.log(`[recorder] ${rec.recordingId} finished: status=${status} file=${fileName} size=${fileSizeBytes ?? 0}`);
 
   // Same gate as the remux step above: nothing worth offloading without
-  // real content. Runs after finishRecording is already persisted, so a
-  // crash or slow upload here never leaves the DB row itself inconsistent
-  // — worst case is a recording that stays local when it should've moved,
-  // which is just the pre-Phase-2 behavior.
+  // real content. Deliberately isolated in its own try/catch — this runs
+  // after the row above is already correctly persisted as "completed" (or
+  // whatever the real outcome was), so a failure here must never propagate
+  // up to finishRecording's own catch-all, which would otherwise overwrite
+  // an already-successful finalize with "failed". Worst case on a genuine
+  // S3 error is a recording that stays local when it should've moved,
+  // which is just the pre-Phase-2 behavior — not a lost or corrupted row.
   if (hasContent && status !== "failed" && s3.isEnabled()) {
-    await offloadToS3(rec.recordingId, fileName, rec.thumbnailFileName);
+    try {
+      await offloadToS3(rec.recordingId, fileName, rec.thumbnailFileName);
+    } catch (err) {
+      console.error(`[recorder] ${rec.recordingId} S3 offload threw unexpectedly — keeping local copy:`, err);
+    }
   }
 }
 
