@@ -5,35 +5,86 @@ import type {
   PlatformAdapter,
   ResolvedChannel,
 } from "./types.js";
-import { offlineStatus, isWithinUpcomingWindow } from "./types.js";
+import { offlineStatus, isWithinUpcomingWindow, isImminent } from "./types.js";
 
-const UA =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+// A small pool of realistic browser UAs, one picked at random per request,
+// rather than a single hardcoded string — spreads our fingerprint out now
+// that the grid fallback (see findLiveOrUpcomingViaGrid) runs on every poll
+// for any creator who isn't confirmed live, which is meaningfully more
+// request volume than a single-UA design was built for.
+const USER_AGENTS = [
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0",
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15",
+  "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:125.0) Gecko/20100101 Firefox/125.0",
+];
 
-const PAGE_HEADERS = {
-  "User-Agent": UA,
-  "Accept-Language": "en-US,en;q=0.9",
-  // Skip the EU consent interstitial.
-  Cookie: "CONSENT=YES+1;",
-};
+function pageHeaders(): Record<string, string> {
+  return {
+    "User-Agent": USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)],
+    "Accept-Language": "en-US,en;q=0.9",
+    // Skip the EU consent interstitial.
+    Cookie: "CONSENT=YES+1;",
+  };
+}
+
+// Retried rather than treated as an immediate failure — a 429/5xx here is
+// YouTube's edge being transiently unhappy, not evidence the creator is
+// actually offline, and without this a single rate-limit blip during a poll
+// looked identical to "went offline" for that cycle.
+const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504]);
+const MAX_FETCH_ATTEMPTS = 3;
+const RETRY_BASE_DELAY_MS = 500;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 async function fetchText(url: string): Promise<string | null> {
-  try {
-    const res = await fetch(url, { headers: PAGE_HEADERS });
-    if (!res.ok) {
-      // Distinguishes an actual block/rate-limit (which shows up as a
-      // non-2xx, e.g. 429/503) from a page that loads fine but can't be
-      // parsed (logged separately in getStatusFor) — both silently fell
-      // back to "offline" before, with nothing in the logs to tell them
-      // apart.
-      console.warn(`[youtube] ${res.status} ${res.statusText} fetching ${url}`);
+  for (let attempt = 1; attempt <= MAX_FETCH_ATTEMPTS; attempt++) {
+    let res: Response;
+    try {
+      res = await fetch(url, { headers: pageHeaders() });
+    } catch (err) {
+      if (attempt < MAX_FETCH_ATTEMPTS) {
+        const delayMs = RETRY_BASE_DELAY_MS * 2 ** (attempt - 1);
+        console.warn(
+          `[youtube] network error fetching ${url} (attempt ${attempt}/${MAX_FETCH_ATTEMPTS}), retrying in ${delayMs}ms:`,
+          err instanceof Error ? err.message : err
+        );
+        await sleep(delayMs);
+        continue;
+      }
+      console.warn(`[youtube] network error fetching ${url}:`, err instanceof Error ? err.message : err);
       return null;
     }
-    return await res.text();
-  } catch (err) {
-    console.warn(`[youtube] network error fetching ${url}:`, err instanceof Error ? err.message : err);
+
+    if (res.ok) return await res.text();
+
+    if (RETRYABLE_STATUS.has(res.status) && attempt < MAX_FETCH_ATTEMPTS) {
+      // Retry-After is occasionally seconds, occasionally an HTTP-date —
+      // only the numeric (seconds) form is common from YouTube's edge, so
+      // that's the only one honored; anything else falls back to backoff.
+      const retryAfterHeader = res.headers.get("retry-after");
+      const retryAfterMs = retryAfterHeader && /^\d+$/.test(retryAfterHeader) ? Number(retryAfterHeader) * 1000 : undefined;
+      const delayMs = retryAfterMs ?? RETRY_BASE_DELAY_MS * 2 ** (attempt - 1);
+      console.warn(
+        `[youtube] ${res.status} ${res.statusText} fetching ${url} — retrying in ${delayMs}ms (attempt ${attempt}/${MAX_FETCH_ATTEMPTS})`
+      );
+      await sleep(delayMs);
+      continue;
+    }
+
+    // Distinguishes an actual block/rate-limit (which shows up as a
+    // non-2xx, e.g. 429/503) from a page that loads fine but can't be
+    // parsed (logged separately in getStatusFor) — both silently fell back
+    // to "offline" before, with nothing in the logs to tell them apart.
+    console.warn(`[youtube] ${res.status} ${res.statusText} fetching ${url}`);
     return null;
   }
+  return null;
 }
 
 function matchOne(html: string, re: RegExp): string | undefined {
@@ -409,6 +460,41 @@ function statusFromParse(creatorId: string, parsed: LiveParse): CreatorStatus | 
  * once (e.g. a stream hours out and a closer premiere), and page order in
  * the grid isn't guaranteed to put the soonest one first.
  */
+// Caches a grid candidate's own parsed watch-page result by video ID —
+// confirmed directly that the common case (a stale placeholder scheduled
+// hours/months out, or a genuinely-upcoming stream that isn't imminent yet)
+// gets re-fetched and re-parsed on every single poll even though nothing
+// about it has actually changed, since the grid scan itself now runs every
+// poll for any non-live creator (see this function's own doc comment).
+//
+// Only ever reused when it's safe to be stale: never for a candidate that
+// was live last time (must always re-check freshly to notice it going
+// offline), never for one with an unknown schedule (could go live with no
+// warning), and never for one whose scheduled time is imminent (see
+// isImminent — exactly when a transition might actually happen). Anything
+// else — the common case above — is fair game to skip re-fetching for a
+// few minutes.
+const CANDIDATE_CACHE_TTL_MS = 5 * 60 * 1000;
+const candidateParseCache = new Map<string, { parsed: LiveParse; fetchedAt: number }>();
+
+function isSafeToCacheParse(parsed: LiveParse): boolean {
+  if (parsed.isLiveNow) return false;
+  if (!parsed.scheduledStartSeconds) return false;
+  return !isImminent(Number(parsed.scheduledStartSeconds) * 1000);
+}
+
+async function getCandidateParse(videoId: string): Promise<LiveParse | null> {
+  const cached = candidateParseCache.get(videoId);
+  if (cached && Date.now() - cached.fetchedAt < CANDIDATE_CACHE_TTL_MS && isSafeToCacheParse(cached.parsed)) {
+    return cached.parsed;
+  }
+  const watchHtml = await fetchText(`https://www.youtube.com/watch?v=${videoId}`);
+  if (!watchHtml) return cached?.parsed ?? null; // fetch failed — stale cache beats nothing
+  const parsed = parseLivePage(watchHtml);
+  if (parsed) candidateParseCache.set(videoId, { parsed, fetchedAt: Date.now() });
+  return parsed;
+}
+
 async function findLiveOrUpcomingViaGrid(creator: CreatorRef): Promise<CreatorStatus | null> {
   const candidateIds: string[] = [];
   function collect(node: unknown) {
@@ -434,9 +520,7 @@ async function findLiveOrUpcomingViaGrid(creator: CreatorRef): Promise<CreatorSt
 
   let soonestUpcoming: { status: CreatorStatus; startMs: number } | null = null;
   for (const videoId of candidateIds) {
-    const watchHtml = await fetchText(`https://www.youtube.com/watch?v=${videoId}`);
-    if (!watchHtml) continue;
-    const parsed = parseLivePage(watchHtml);
+    const parsed = await getCandidateParse(videoId);
     const status = parsed && statusFromParse(creator.id, parsed);
     if (!status) continue;
     if (status.state === "live") return status;
