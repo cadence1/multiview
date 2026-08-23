@@ -378,36 +378,52 @@ function statusFromParse(creatorId: string, parsed: LiveParse): CreatorStatus | 
  * lives under the channel's regular "Videos" grid, not a live-specific
  * one, and parses through the exact same isLiveNow/isUpcoming logic once
  * you're looking at the right video (confirmed directly) — so this scans
- * that grid for anything carrying a LIVE/PREMIERE badge and verifies each
- * candidate's own watch page directly, rather than trusting /live's
- * redirect. Deliberately capped to a handful of candidates, but runs on
- * every poll where the fast path comes back empty — no cooldown. An
- * earlier version cooled this down per creator and treated a
- * skipped-due-to-cooldown check as "offline"; for a creator whose /live
- * simply never resolves (this fallback is the *only* thing finding them
- * at all, every single poll), that meant flapping between correctly
- * "live" and falsely "offline" every cooldown window — confirmed
- * directly against a real creator still actually live who intermittently
- * vanished from the UI this way. Getting it right matters more than the
- * one extra request this costs per poll for a creator /live doesn't
- * resolve.
+ * that grid for anything carrying a LIVE/PREMIERE/Upcoming badge and
+ * verifies each candidate's own watch page directly, rather than trusting
+ * /live's redirect.
+ *
+ * Scans BOTH the "Videos" grid (/videos) and the "Live" grid (/streams) —
+ * verified directly against a real channel that a genuinely near-term
+ * upcoming stream only appears under /streams (badge text "Upcoming"),
+ * while /videos carried none of that channel's live/upcoming content at
+ * all. An earlier version only fetched /videos and only matched
+ * LIVE/PREMIERE badges, so a real "Upcoming" stream a few minutes out was
+ * invisible to this fallback entirely, leaving only /live's own (stale,
+ * months-out) placeholder to fall back on.
+ *
+ * Deliberately capped to a handful of candidates, but runs on every poll
+ * where the fast path comes back empty — no cooldown. An earlier version
+ * cooled this down per creator and treated a skipped-due-to-cooldown check
+ * as "offline"; for a creator whose /live simply never resolves (this
+ * fallback is the *only* thing finding them at all, every single poll),
+ * that meant flapping between correctly "live" and falsely "offline" every
+ * cooldown window — confirmed directly against a real creator still
+ * actually live who intermittently vanished from the UI this way. Getting
+ * it right matters more than the extra requests this costs per poll for a
+ * creator /live doesn't resolve.
  */
 async function findLiveOrUpcomingViaGrid(creator: CreatorRef): Promise<CreatorStatus | null> {
-  const html = await fetchText(`https://www.youtube.com/channel/${creator.platformId}/videos`);
-  if (!html) return null;
-  const data = extractJsonAfter(html, "var ytInitialData");
-  if (!data) return null;
-
   const candidateIds: string[] = [];
   function collect(node: unknown) {
-    if (candidateIds.length >= 3 || !node || typeof node !== "object") return;
+    if (candidateIds.length >= 6 || !node || typeof node !== "object") return;
     const lvm = (node as any).lockupViewModel;
-    if (typeof lvm?.contentId === "string" && /"text":"(LIVE|PREMIERE)"/.test(JSON.stringify(lvm))) {
+    if (
+      typeof lvm?.contentId === "string" &&
+      /"text":"(LIVE|PREMIERE|Upcoming)"/i.test(JSON.stringify(lvm)) &&
+      !candidateIds.includes(lvm.contentId)
+    ) {
       candidateIds.push(lvm.contentId);
     }
     for (const value of Object.values(node as Record<string, unknown>)) collect(value);
   }
-  collect(data);
+
+  for (const tab of ["streams", "videos"]) {
+    const html = await fetchText(`https://www.youtube.com/channel/${creator.platformId}/${tab}`);
+    if (!html) continue;
+    const data = extractJsonAfter(html, "var ytInitialData");
+    if (!data) continue;
+    collect(data);
+  }
 
   for (const videoId of candidateIds) {
     const watchHtml = await fetchText(`https://www.youtube.com/watch?v=${videoId}`);
