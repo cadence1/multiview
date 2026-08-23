@@ -31,8 +31,21 @@ ENV DATA_DIR=/app/server/data
 # platforms changing their pages — apk's package, if it existed, would lag.
 # --break-system-packages is fine in a single-purpose container image; this
 # isn't a shared Python environment.
+#
+# yt-dlp-ejs alongside it: yt-dlp needs this to solve YouTube's own
+# signature/"n"-parameter challenges — without it, confirmed directly
+# (2026-08-23) that extraction runs degraded with real formats silently
+# missing. The pip-installed yt-dlp doesn't bundle it (only the official
+# standalone executable does); yt-dlp otherwise offers to fetch the same
+# thing from GitHub at runtime via --remote-components, but installing the
+# real package at build time is more deterministic for a container image —
+# no runtime dependency on GitHub being reachable, no cold-start fetch
+# delay, reproducible builds. See server/yt-dlp.conf for the other half of
+# this fix (pointing yt-dlp at Node as its JS runtime).
 RUN apk add --no-cache ffmpeg python3 py3-pip && \
-    pip install --no-cache-dir --break-system-packages yt-dlp
+    pip install --no-cache-dir --break-system-packages yt-dlp yt-dlp-ejs
+
+COPY server/yt-dlp.conf /etc/yt-dlp.conf
 
 COPY --from=build /app/server/package.json ./package.json
 RUN npm install --omit=dev
