@@ -1,0 +1,100 @@
+# Multiview CI — starter pipeline.
+#
+# What runs today: install dependencies and build both workspaces (client +
+# server). `npm run build` invokes `tsc` for each, so this stage also serves as
+# the typecheck — a type error fails the pipeline.
+#
+# Deliberately minimal. Placeholders for lint, test, Docker image build, and
+# deploy-to-docker1 are stubbed out below (commented) so you can enable each as
+# the project grows. See the notes at the bottom.
+
+stages:
+  - build
+  # - test        # enable once lint/test scripts exist
+  # - package     # enable to build & push a Docker image to the registry
+  # - deploy      # enable to auto-deploy to docker1
+
+default:
+  image: node:22-alpine        # matches the Dockerfile build stage
+  # Cache the npm download cache keyed on the lockfile, so unchanged deps are
+  # restored between pipelines instead of re-downloaded.
+  cache:
+    key:
+      files:
+        - package-lock.json
+    paths:
+      - .npm/
+
+build:
+  stage: build
+  script:
+    - npm ci --cache .npm --prefer-offline   # deterministic install (uses lockfile)
+    - npm run build                          # client build + server build (tsc = typecheck)
+  artifacts:
+    name: "multiview-build-$CI_COMMIT_SHORT_SHA"
+    paths:
+      - server/dist
+      - client/dist
+    expire_in: 1 week
+  rules:
+    # Run on merge requests and on any branch push.
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH
+
+# ---------------------------------------------------------------------------
+# NEXT STEPS (uncomment + adapt when ready)
+# ---------------------------------------------------------------------------
+#
+# lint:
+#   stage: test
+#   script:
+#     - npm ci --cache .npm --prefer-offline
+#     - npm run lint          # add an eslint "lint" script to package.json first
+#   rules:
+#     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+#     - if: $CI_COMMIT_BRANCH
+#
+# test:
+#   stage: test
+#   script:
+#     - npm ci --cache .npm --prefer-offline
+#     - npm test              # add a test runner (e.g. vitest/node:test) first
+#   rules:
+#     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+#     - if: $CI_COMMIT_BRANCH
+#
+# Build & push a Docker image to GitLab's built-in container registry. Requires
+# a runner with the Docker executor (or docker-in-docker as below).
+#
+# package:
+#   stage: package
+#   image: docker:27
+#   services:
+#     - docker:27-dind
+#   variables:
+#     DOCKER_TLS_CERTDIR: "/certs"
+#   script:
+#     - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
+#     - docker build -t "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA" -t "$CI_REGISTRY_IMAGE:latest" .
+#     - docker push "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA"
+#     - docker push "$CI_REGISTRY_IMAGE:latest"
+#   rules:
+#     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+#
+# Auto-deploy to the docker1 host over SSH. Add a DOCKER1_SSH_KEY (masked, as a
+# file-type CI/CD variable) and DOCKER1_HOST in Settings > CI/CD > Variables.
+#
+# deploy:
+#   stage: deploy
+#   image: alpine:3.20
+#   script:
+#     - apk add --no-cache openssh-client
+#     - eval $(ssh-agent -s)
+#     - chmod 600 "$DOCKER1_SSH_KEY" && ssh-add "$DOCKER1_SSH_KEY"
+#     - ssh -o StrictHostKeyChecking=accept-new "$DOCKER1_HOST"
+#         "cd /path/to/multiview && git pull origin main && docker compose up --build -d"
+#   environment:
+#     name: production
+#   rules:
+#     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+#       when: manual        # require a click to deploy; drop this line for full auto
