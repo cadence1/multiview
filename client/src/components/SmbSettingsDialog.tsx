@@ -119,7 +119,7 @@ export default function SmbSettingsDialog({ onClose }: { onClose: () => void }) 
               <input
                 value={form.host}
                 onChange={(e) => update("host", e.target.value)}
-                placeholder="Host (e.g. nas.dfitz.io)"
+                placeholder="Host"
                 className="col-span-2 rounded-md border border-base-600 bg-base-850 px-2.5 py-1.5 text-sm text-slate-100 placeholder:text-slate-500 focus:border-indigo-500 focus:outline-none"
               />
               <input
@@ -134,14 +134,14 @@ export default function SmbSettingsDialog({ onClose }: { onClose: () => void }) 
             <input
               value={form.share}
               onChange={(e) => update("share", e.target.value)}
-              placeholder="Share name (e.g. nas)"
+              placeholder="Share name"
               className="w-full rounded-md border border-base-600 bg-base-850 px-2.5 py-1.5 text-sm text-slate-100 placeholder:text-slate-500 focus:border-indigo-500 focus:outline-none"
             />
 
             <input
               value={form.basePath}
               onChange={(e) => update("basePath", e.target.value)}
-              placeholder="Folder within the share (optional, e.g. multiview)"
+              placeholder="Folder within the share (optional)"
               className="w-full rounded-md border border-base-600 bg-base-850 px-2.5 py-1.5 text-sm text-slate-100 placeholder:text-slate-500 focus:border-indigo-500 focus:outline-none"
             />
 
