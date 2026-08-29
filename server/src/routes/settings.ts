@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { statements } from "../db.js";
 import * as smb from "../recordings/smb.js";
+import { backfillOffload } from "../recordings/recorder.js";
 
 export const settingsRouter = Router();
 
@@ -61,6 +62,12 @@ settingsRouter.put("/smb", async (req, res) => {
   if (body.enabled) {
     const result = await smb.mount();
     if (!result.ok) mountError = result.error;
+    // Fire-and-forget, not awaited — existing local recordings can be
+    // multi-GB, and there's no reason to make the settings dialog hang
+    // waiting for all of them to finish moving before it can close. Only
+    // worth attempting once the mount just above actually succeeded;
+    // backfillOffload would otherwise just fail the same way per-candidate.
+    if (result.ok) backfillOffload().catch((err) => console.error("[settings] backfill after enabling SMB failed:", err));
   }
 
   res.json({ ...toPublicShape(statements.smbSettings.get()), mountError });

@@ -12,6 +12,7 @@ import { settingsRouter } from "./routes/settings.js";
 import { startPoller } from "./poller.js";
 import { checkWritable } from "./recordings/storage.js";
 import { backfillAutoTags } from "./recordings/tags.js";
+import { backfillOffload } from "./recordings/recorder.js";
 import * as smb from "./recordings/smb.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -58,14 +59,19 @@ checkWritable().then((result) => {
 // A real kernel mount never survives a process restart, but the
 // smb_settings row saying "enabled" does — re-establish it here so a
 // redeploy/crash/restart doesn't silently leave offloaded recordings
-// unreachable until someone happens to re-save the settings.
-if (smb.isEnabled()) {
-  smb.mount().then((result) => {
-    if (!result.ok) {
-      console.error(`[recordings] SMB mount failed on startup: ${result.error} — offload to it will be skipped until this is fixed.`);
-    }
-  });
-}
+// unreachable until someone happens to re-save the settings. Backfill runs
+// after this resolves either way (not blocking server startup on it — a
+// multi-GB backfill could take a while) — a failed mount here just means
+// offloadToSmb's own per-candidate mount check will try again and likely
+// fail the same way, logged clearly, not silently skipped.
+(smb.isEnabled()
+  ? smb.mount().then((result) => {
+      if (!result.ok) {
+        console.error(`[recordings] SMB mount failed on startup: ${result.error} — offload to it will be skipped until this is fixed.`);
+      }
+    })
+  : Promise.resolve()
+).then(() => backfillOffload());
 
 app.listen(env.port, () => {
   console.log(`Multiview server listening on http://localhost:${env.port}`);

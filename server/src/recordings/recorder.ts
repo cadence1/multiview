@@ -915,6 +915,46 @@ export async function deleteRecording(recordingId: string): Promise<{ ok: boolea
   return { ok: true };
 }
 
+/**
+ * One-time-per-startup sweep for recordings that finished before an
+ * offload backend was configured (or enabled it after they'd already
+ * completed) — mirrors tags.ts's backfillAutoTags: idempotent (a recording
+ * already offloaded has storage_location !== "local" and is skipped), safe
+ * to run on every startup, picks up anything the normal offload-at-finish
+ * step in finishRecording never had a chance to touch. Sequential, not
+ * parallel — these can be multi-GB files, and copying/uploading several at
+ * once risks saturating bandwidth or (for S3) racing multiple large
+ * uploads against each other for no real benefit, since nothing is time-
+ * sensitive about a backfill the way a live capture is.
+ */
+export async function backfillOffload(): Promise<void> {
+  const backend = s3.isEnabled() ? "s3" : smb.isEnabled() ? "smb" : null;
+  if (!backend) return;
+
+  const candidates = statements.listRecordings
+    .all()
+    .filter(
+      (r) =>
+        r.storage_location === "local" &&
+        (r.status === "completed" || r.status === "stalled" || r.status === "low-disk") &&
+        storage.existsSync(r.file_name)
+    );
+  if (candidates.length === 0) return;
+
+  console.log(`[recorder] backfilling ${candidates.length} existing local recording(s) to ${backend}`);
+  for (const row of candidates) {
+    try {
+      if (backend === "s3") {
+        await offloadToS3(row.id, row.file_name, row.thumbnail_file_name);
+      } else {
+        await offloadToSmb(row.id, row.file_name, row.thumbnail_file_name);
+      }
+    } catch (err) {
+      console.error(`[recorder] backfill offload failed for ${row.id}:`, err);
+    }
+  }
+}
+
 export function listRecordings(): (RecordingRow & { isActive: boolean; tags: string[] })[] {
   const tagsByRecording = statements.tags.listAllByRecording();
   return statements.listRecordings.all().map((r) => ({
