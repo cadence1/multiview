@@ -66,14 +66,20 @@ recordingsRouter.get("/:id/file", async (req, res) => {
   const row = recorder.getRecording(req.params.id);
   if (!row) return res.status(404).end();
   const abs = storage.absolutePath(row.file_name);
-  if (abs && storage.existsSync(row.file_name)) {
+  if (abs && (await storage.fileExists(row.file_name))) {
     // sendFile natively supports Range requests, needed both for seeking a
     // finished recording and for progressively downloading a large one.
     return res.sendFile(abs);
   }
-  const smbAbs = storage.smbAbsolutePath(row.file_name);
-  if (smbAbs && storage.smbExistsSync(row.file_name)) {
-    return res.sendFile(smbAbs);
+  // Gated on storage_location, unlike the local check above — a slow/timed-
+  // out check against a down SMB share is a real cost worth avoiding for a
+  // recording that was never SMB-backed in the first place, not just a
+  // pointless one.
+  if (row.storage_location === "smb") {
+    const smbAbs = storage.smbAbsolutePath(row.file_name);
+    if (smbAbs && (await storage.smbFileExists(row.file_name))) {
+      return res.sendFile(smbAbs);
+    }
   }
   if (row.storage_location === "s3") {
     return s3.streamObject(row.file_name, req.headers.range, res);
@@ -85,12 +91,14 @@ recordingsRouter.get("/:id/thumbnail", async (req, res) => {
   const row = recorder.getRecording(req.params.id);
   if (!row?.thumbnail_file_name) return res.status(404).end();
   const abs = storage.absolutePath(row.thumbnail_file_name);
-  if (abs && storage.existsSync(row.thumbnail_file_name)) {
+  if (abs && (await storage.fileExists(row.thumbnail_file_name))) {
     return res.sendFile(abs);
   }
-  const smbAbs = storage.smbAbsolutePath(row.thumbnail_file_name);
-  if (smbAbs && storage.smbExistsSync(row.thumbnail_file_name)) {
-    return res.sendFile(smbAbs);
+  if (row.storage_location === "smb") {
+    const smbAbs = storage.smbAbsolutePath(row.thumbnail_file_name);
+    if (smbAbs && (await storage.smbFileExists(row.thumbnail_file_name))) {
+      return res.sendFile(smbAbs);
+    }
   }
   if (row.storage_location === "s3") {
     return s3.streamObject(row.thumbnail_file_name, undefined, res);

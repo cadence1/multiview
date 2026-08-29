@@ -43,9 +43,52 @@ export function smbAbsolutePath(fileName: string): string | null {
   return resolveWithin(env.smbMountDir, fileName);
 }
 
-export function smbExistsSync(fileName: string): boolean {
+// How long a single request is willing to wait on the SMB mount before
+// giving up and answering "not found" rather than hanging — confirmed
+// directly against a real outage (the NAS's own IP blocked while still
+// mounted) that a dead CIFS connection's own timeout is far longer than
+// this: a request against it was still unresolved past several minutes.
+// This doesn't cancel the underlying stat() — Node's fs promises can't be
+// cancelled, and it keeps running on libuv's threadpool in the background
+// regardless — it just stops *this request* from waiting on it, so a real
+// outage costs one slow response instead of one that never comes back.
+const SMB_ACCESS_TIMEOUT_MS = 5_000;
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("timed out")), ms);
+    promise.then(
+      (v) => {
+        clearTimeout(timer);
+        resolve(v);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      }
+    );
+  });
+}
+
+/** Deliberately async, not fs.existsSync — confirmed this matters
+ * directly: existsSync is synchronous, and Node is single-threaded for
+ * synchronous I/O, so a stat() against a CIFS mount whose remote host has
+ * gone unreachable (network partition, NAS down — mounted but no longer
+ * actually answering, not the same as cleanly unmounted) would block the
+ * *entire* server process for however long that syscall takes to time
+ * out — every other request, every creator, everything, not just this
+ * one file. fsPromises.access lets that one request wait it out without
+ * freezing anything else — and the timeout wrapper below keeps that one
+ * request itself from hanging indefinitely too. */
+export async function smbFileExists(fileName: string): Promise<boolean> {
   const abs = smbAbsolutePath(fileName);
-  return abs ? fs.existsSync(abs) : false;
+  if (!abs) return false;
+  try {
+    await withTimeout(fsPromises.access(abs, fs.constants.F_OK), SMB_ACCESS_TIMEOUT_MS);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** Copies a finished recording's file from local disk onto the (already
@@ -152,9 +195,19 @@ export async function listFiles(): Promise<string[]> {
   }
 }
 
-export function existsSync(fileName: string): boolean {
+/** Async for the same reason as smbFileExists — RECORDINGS_DIR is local
+ * disk in the overwhelmingly common case (so this is low-risk in
+ * practice), but keeping both async keeps the two symmetric rather than
+ * leaving a synchronous local-only path as an exception to reason about. */
+export async function fileExists(fileName: string): Promise<boolean> {
   const abs = resolveSafe(fileName);
-  return abs ? fs.existsSync(abs) : false;
+  if (!abs) return false;
+  try {
+    await fsPromises.access(abs, fs.constants.F_OK);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export async function deleteFile(fileName: string | null): Promise<void> {

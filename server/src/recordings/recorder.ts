@@ -931,14 +931,17 @@ export async function backfillOffload(): Promise<void> {
   const backend = s3.isEnabled() ? "s3" : smb.isEnabled() ? "smb" : null;
   if (!backend) return;
 
-  const candidates = statements.listRecordings
+  // The file-existence check is async (see storage.fileExists — a
+  // synchronous check isn't safe to use anywhere near a network mount), so
+  // this is a real async loop rather than a plain .filter() — still a
+  // pre-pass before any offload attempts, just not a synchronous one.
+  const statusFiltered = statements.listRecordings
     .all()
-    .filter(
-      (r) =>
-        r.storage_location === "local" &&
-        (r.status === "completed" || r.status === "stalled" || r.status === "low-disk") &&
-        storage.existsSync(r.file_name)
-    );
+    .filter((r) => r.storage_location === "local" && (r.status === "completed" || r.status === "stalled" || r.status === "low-disk"));
+  const candidates = [];
+  for (const row of statusFiltered) {
+    if (await storage.fileExists(row.file_name)) candidates.push(row);
+  }
   if (candidates.length === 0) return;
 
   console.log(`[recorder] backfilling ${candidates.length} existing local recording(s) to ${backend}`);
