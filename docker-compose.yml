@@ -22,4 +22,17 @@ services:
     # capability set, no seccomp bypass — just this one capability).
     cap_add:
       - SYS_ADMIN
+    # cap_add alone isn't sufficient on an AppArmor-enforcing host (most
+    # Debian/Ubuntu hosts, confirmed directly against a real deployment:
+    # "Unable to apply new capability set" / "mount ... Permission denied"
+    # even with SYS_ADMIN granted) — Docker's default "docker-default"
+    # AppArmor profile is a separate mandatory-access-control layer on top
+    # of capabilities/seccomp, and it blocks mount regardless of what
+    # capabilities the container holds. This disables AppArmor confinement
+    # for this one container rather than scoping a custom profile — same
+    # tradeoff shape as the seccomp question already resolved above (this
+    # app's own established posture is already fairly permissive — no auth
+    # layer, plaintext credentials in .env/DB — per its own README).
+    security_opt:
+      - apparmor:unconfined
     restart: unless-stopped
