@@ -1,4 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import fsPromises from "node:fs/promises";
+import path from "node:path";
 import { nanoid } from "nanoid";
 import { env } from "../env.js";
 import { statements, type CreatorRow, type RecordingRow, type RecordingStatus } from "../db.js";
@@ -416,20 +418,26 @@ async function finalizeRecording(rec: FinishableRecording, code: number | null, 
   // an already-successful finalize with "failed". Worst case on a genuine
   // offload error is a recording that stays local when it should've moved,
   // which is just the pre-Phase-2 behavior — not a lost or corrupted row.
-  //
-  // S3 and SMB are mutually exclusive in practice — this app talks to
-  // exactly one remote backend at a time. S3 wins if somehow both are
-  // configured at once, since it's the original, longer-standing option.
   if (hasContent && status !== "failed") {
     try {
-      if (s3.isEnabled()) {
-        await offloadToS3(rec.recordingId, fileName, rec.thumbnailFileName);
-      } else if (smb.isEnabled()) {
-        await offloadToSmb(rec.recordingId, fileName, rec.thumbnailFileName);
-      }
+      await offloadIfConfigured(rec.recordingId, fileName, rec.thumbnailFileName);
     } catch (err) {
       console.error(`[recorder] ${rec.recordingId} offload threw unexpectedly — keeping local copy:`, err);
     }
+  }
+}
+
+/** Shared by finishRecording, backfillOffload, and importRecording — every
+ * path that ends with a real, finished local file that might need moving
+ * to whichever remote backend (if any) is configured. S3 and SMB are
+ * mutually exclusive in practice — this app talks to exactly one remote
+ * backend at a time. S3 wins if somehow both are configured at once,
+ * since it's the original, longer-standing option. */
+async function offloadIfConfigured(recordingId: string, fileName: string, thumbnailFileName: string | null): Promise<void> {
+  if (s3.isEnabled()) {
+    await offloadToS3(recordingId, fileName, thumbnailFileName);
+  } else if (smb.isEnabled()) {
+    await offloadToSmb(recordingId, fileName, thumbnailFileName);
   }
 }
 
@@ -880,6 +888,107 @@ export async function downloadVideo(url: string): Promise<StartRecordingResult> 
   return { ok: true, recording: { ...row, isActive: true, tags: appliedTags } };
 }
 
+/** Best-effort — a single ffmpeg frame grab a second in, same tool already
+ * used for remux, just a different invocation. A missing thumbnail isn't
+ * worth failing an import over, same reasoning as downloadThumbnail's own
+ * failure handling for a URL-based download. */
+function extractThumbnail(sourceFileName: string, thumbnailFileName: string): Promise<string | null> {
+  const sourceAbs = storage.absolutePath(sourceFileName);
+  const thumbAbs = storage.absolutePath(thumbnailFileName);
+  if (!sourceAbs || !thumbAbs) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    const proc = spawn("ffmpeg", ["-y", "-ss", "00:00:01", "-i", sourceAbs, "-frames:v", "1", thumbAbs]);
+    proc.on("error", () => resolve(null));
+    proc.on("close", (code) => resolve(code === 0 ? thumbnailFileName : null));
+  });
+}
+
+/**
+ * Phase 6: import a video file the user already has — captured on a
+ * different device, moved here manually, whatever it is — directly into
+ * the library, rather than this app having captured or downloaded it
+ * itself. Simpler than either of those: routes/recordings.ts's upload
+ * middleware has already streamed the file straight onto local disk before
+ * this runs, so there's no process to manage, no interruption-resilience
+ * concern, and no remux (the container the file already came in is kept
+ * as-is, not re-wrapped). Reuses the exact same auto-tagging and
+ * offload-if-configured steps every other recording-creation path uses,
+ * so an imported file is indistinguishable from a captured/downloaded one
+ * everywhere else in the app once this returns.
+ */
+export async function importRecording(
+  uploadedAbsPath: string,
+  originalFileName: string,
+  opts: { title?: string; displayName?: string }
+): Promise<StartRecordingResult> {
+  const recordingId = nanoid();
+  const startedAt = new Date().toISOString();
+  const ext = path.extname(originalFileName) || ".mp4";
+  const baseTitle = opts.title?.trim() || path.basename(originalFileName, path.extname(originalFileName)) || "Untitled";
+  const displayName = opts.displayName?.trim() || "Imported";
+  const namePart = storage.sanitizeFileNameComponent(`import-${displayName}-${startedAt}`);
+  const finalFileName = `${namePart}${ext}`;
+  const finalAbs = storage.absolutePath(finalFileName);
+  if (!finalAbs) return { ok: false, error: "invalid output path" };
+
+  // A rename, not a copy — the upload middleware already wrote the file
+  // into RECORDINGS_DIR itself (just under multer's own temp name), so
+  // this only ever needs to move it within the same directory/filesystem,
+  // not actually shuffle any bytes.
+  try {
+    await fsPromises.rename(uploadedAbsPath, finalAbs);
+  } catch (err) {
+    return { ok: false, error: `couldn't move the uploaded file into place: ${err instanceof Error ? err.message : String(err)}` };
+  }
+
+  const stat = await storage.statFile(finalFileName);
+  if (!stat || stat.size === 0) {
+    await storage.deleteFile(finalFileName);
+    return { ok: false, error: "uploaded file is empty" };
+  }
+
+  const thumbnailFileName = await extractThumbnail(finalFileName, `${namePart}.jpg`);
+
+  const row: RecordingRow = {
+    id: recordingId,
+    creator_id: "", // not tied to a tracked creator — see db.ts's doc comment
+    platform: "import",
+    display_name: displayName,
+    title: baseTitle,
+    thumbnail_file_name: thumbnailFileName,
+    file_name: finalFileName,
+    status: "completed",
+    started_at: startedAt,
+    ended_at: null,
+    file_size_bytes: null,
+    error: null,
+    storage_location: "local",
+  };
+  statements.insertRecording.run(row);
+  // Second write to fill in the fields insertRecording's own statement
+  // always leaves NULL (ended_at/file_size_bytes/error) — same two-step
+  // shape every other recording type goes through via finishRecording,
+  // just done directly here since there's no live process whose exit this
+  // needs to wait for.
+  statements.finishRecording.run(recordingId, "completed", startedAt, finalFileName, stat.size, null);
+
+  const appliedTags = tags.applyAutoTags(recordingId, {
+    displayName,
+    title: baseTitle,
+    startedAt,
+    platform: "import",
+  });
+
+  try {
+    await offloadIfConfigured(recordingId, finalFileName, thumbnailFileName);
+  } catch (err) {
+    console.error(`[recorder] ${recordingId} offload after import failed — keeping local copy:`, err);
+  }
+
+  const finalRow = statements.getRecording.get(recordingId)!;
+  return { ok: true, recording: { ...finalRow, isActive: false, tags: appliedTags } };
+}
+
 export async function deleteRecording(recordingId: string): Promise<{ ok: boolean; error?: string }> {
   if (active.has(recordingId)) {
     return { ok: false, error: "recording is still in progress — stop it first" };
@@ -947,11 +1056,7 @@ export async function backfillOffload(): Promise<void> {
   console.log(`[recorder] backfilling ${candidates.length} existing local recording(s) to ${backend}`);
   for (const row of candidates) {
     try {
-      if (backend === "s3") {
-        await offloadToS3(row.id, row.file_name, row.thumbnail_file_name);
-      } else {
-        await offloadToSmb(row.id, row.file_name, row.thumbnail_file_name);
-      }
+      await offloadIfConfigured(row.id, row.file_name, row.thumbnail_file_name);
     } catch (err) {
       console.error(`[recorder] backfill offload failed for ${row.id}:`, err);
     }

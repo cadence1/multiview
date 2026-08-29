@@ -106,6 +106,11 @@ interface MultiviewState {
   refreshRecordings: () => Promise<void>;
   startRecording: (creatorId: string, fromStart?: boolean) => Promise<void>;
   downloadVideo: (url: string) => Promise<void>;
+  uploadRecording: (
+    file: File,
+    opts: { title?: string; displayName?: string },
+    onProgress?: (pct: number) => void
+  ) => Promise<void>;
   stopRecording: (id: string) => Promise<void>;
   deleteRecording: (id: string) => Promise<void>;
   addRecordingTag: (id: string, name: string) => Promise<void>;
@@ -346,6 +351,11 @@ export const useStore = create<MultiviewState>((set, get) => ({
 
   downloadVideo: async (url) => {
     const recording = await api.downloadVideo(url);
+    set((state) => ({ recordings: [recording, ...state.recordings] }));
+  },
+
+  uploadRecording: async (file, opts, onProgress) => {
+    const recording = await api.uploadRecording(file, opts, onProgress);
     set((state) => ({ recordings: [recording, ...state.recordings] }));
   },
 

@@ -1,11 +1,28 @@
+import fs from "node:fs/promises";
+import path from "node:path";
 import { Router } from "express";
+import multer from "multer";
+import { nanoid } from "nanoid";
 import { statements } from "../db.js";
+import { env } from "../env.js";
 import { statusCache } from "../cache.js";
 import * as recorder from "../recordings/recorder.js";
 import * as storage from "../recordings/storage.js";
 import * as s3 from "../recordings/s3.js";
 
 export const recordingsRouter = Router();
+
+// Phase 6: import a file the user already has. Streams straight into
+// RECORDINGS_DIR under a throwaway temp name (multer's diskStorage writes
+// incrementally to disk as the request body arrives — never buffers a
+// multi-GB upload in memory) — recorder.ts's importRecording renames it
+// into its real place afterward, once it knows the recording's real id.
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, env.recordingsDir),
+    filename: (_req, file, cb) => cb(null, `upload-${Date.now()}-${nanoid(8)}${path.extname(file.originalname)}`),
+  }),
+});
 
 recordingsRouter.get("/", (_req, res) => {
   res.json(recorder.listRecordings());
@@ -44,6 +61,40 @@ recordingsRouter.post("/download", async (req, res) => {
   }
   const result = await recorder.downloadVideo(url);
   if (!result.ok) return res.status(409).json({ error: result.error });
+  res.status(201).json(result.recording);
+});
+
+// Phase 6: import a video file the user already has (captured on another
+// device, moved here manually, whatever it is) rather than a URL yt-dlp
+// can pull from. Pre-checked here (before multer starts consuming the
+// request body) and re-checked in recorder.ts's importRecording once the
+// upload's real size is known — same two-point gate startRecording/
+// downloadVideo already use, just split around the upload itself instead
+// of before a download.
+recordingsRouter.post("/upload", async (req, res, next) => {
+  if (!(await storage.hasEnoughFreeSpace())) {
+    return res.status(507).json({ error: `less than ${env.recordingMinFreeGb}GB free disk space — refusing the upload` });
+  }
+  next();
+}, upload.single("file"), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: "file is required" });
+
+  if (!(await storage.hasEnoughFreeSpace())) {
+    // This specific upload was the thing that tipped it over — the
+    // pre-check above only ever catches the common case (already low
+    // before a large new upload even starts), not this one.
+    await fs.unlink(req.file.path).catch(() => {});
+    return res.status(507).json({ error: `free disk space dropped below ${env.recordingMinFreeGb}GB during the upload — deleted` });
+  }
+
+  const result = await recorder.importRecording(req.file.path, req.file.originalname, {
+    title: typeof req.body.title === "string" ? req.body.title : undefined,
+    displayName: typeof req.body.displayName === "string" ? req.body.displayName : undefined,
+  });
+  if (!result.ok) {
+    await fs.unlink(req.file.path).catch(() => {});
+    return res.status(409).json({ error: result.error });
+  }
   res.status(201).json(result.recording);
 });
 

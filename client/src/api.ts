@@ -86,4 +86,39 @@ export const api = {
       method: "POST",
       body: JSON.stringify(settings),
     }),
+  /** XHR, not fetch — fetch has no upload-progress event at all, and a
+   * video file from another device can be large enough (many GB) that a
+   * bare "uploading…" with no indication of progress would be a real
+   * regression from every other action in this app giving some sense of
+   * what's happening. XHR's upload.onprogress is the only way to get real
+   * byte-level progress in a browser. */
+  uploadRecording: (file: File, opts: { title?: string; displayName?: string }, onProgress?: (pct: number) => void) =>
+    new Promise<Recording>((resolve, reject) => {
+      const form = new FormData();
+      form.append("file", file);
+      if (opts.title) form.append("title", opts.title);
+      if (opts.displayName) form.append("displayName", opts.displayName);
+
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", "/api/recordings/upload");
+      xhr.upload.onprogress = (e) => {
+        if (onProgress && e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
+      };
+      xhr.onload = () => {
+        let body: unknown;
+        try {
+          body = JSON.parse(xhr.responseText);
+        } catch {
+          body = undefined;
+        }
+        if (xhr.status >= 200 && xhr.status < 300) {
+          resolve(body as Recording);
+        } else {
+          const message = (body as { error?: string } | undefined)?.error || xhr.statusText || "upload failed";
+          reject(new Error(message));
+        }
+      };
+      xhr.onerror = () => reject(new Error("network error during upload"));
+      xhr.send(form);
+    }),
 };

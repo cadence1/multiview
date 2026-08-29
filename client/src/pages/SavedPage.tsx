@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { useStore } from "../store.js";
 import RecordingsList, { StorageBar } from "../components/RecordingsList.js";
 import DownloadVideoForm from "../components/DownloadVideoForm.js";
+import ImportRecordingForm from "../components/ImportRecordingForm.js";
 
 const RECORDINGS_POLL_MS = 30_000;
 
@@ -46,7 +47,7 @@ export default function SavedPage() {
 
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden bg-base-950">
-      <header className="grid grid-cols-3 items-center border-b border-base-700 px-4 py-2">
+      <header className="grid grid-cols-[auto_1fr_auto] items-center gap-3 border-b border-base-700 px-4 py-2">
         <Link
           to="/"
           className="justify-self-start rounded-md border border-base-600 px-2 py-1 text-sm text-slate-300 hover:bg-base-800"
@@ -56,7 +57,8 @@ export default function SavedPage() {
         <span className="justify-self-center text-sm font-semibold tracking-wide text-slate-300">
           Saved Recordings
         </span>
-        <div className="justify-self-end">
+        <div className="flex items-center justify-self-end gap-1.5">
+          <ImportRecordingForm />
           <DownloadVideoForm />
         </div>
       </header>
