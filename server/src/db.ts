@@ -57,10 +57,34 @@ export interface RecordingRow {
   error: string | null;
   /** Where file_name/thumbnail_file_name actually live right now — "local"
    * for the whole lifetime of an in-progress recording (yt-dlp/ffmpeg only
-   * ever write to local disk), flipped to "s3" after finishRecording's S3
-   * offload succeeds and the local copies are deleted. See recorder.ts and
-   * recordings/s3.ts. */
-  storage_location: "local" | "s3";
+   * ever write to local disk), flipped to "s3" or "smb" after
+   * finishRecording's offload to whichever backend is configured succeeds
+   * and the local copies are deleted. See recorder.ts and
+   * recordings/s3.ts / recordings/smb.ts. */
+  storage_location: "local" | "s3" | "smb";
+}
+
+/** Singleton row (id fixed to 1) — SMB connection details for offloading
+ * finished recordings, same role as the S3_* env vars but configured
+ * live from the settings UI instead of requiring a redeploy. Password is
+ * stored in plain text, matching this app's existing posture everywhere
+ * else a credential lives (TWITCH_CLIENT_SECRET, S3 secret key, etc. are
+ * all plain env vars too) — this is a personal, LAN-facing tool per the
+ * README, not a multi-tenant service. The settings API (routes/settings.ts)
+ * is careful never to echo the stored password back in a GET response. */
+export interface SmbSettingsRow {
+  id: 1;
+  enabled: 0 | 1;
+  host: string;
+  port: number;
+  share: string;
+  domain: string;
+  username: string;
+  password: string;
+  /** Prefix within the share, mirroring s3KeyPrefix — e.g. "multiview/" so
+   * this app doesn't dump files at the share's own root. */
+  base_path: string;
+  updated_at: string;
 }
 
 const dbPath = path.join(env.dataDir, "multiview.db");
@@ -130,6 +154,27 @@ if (!recordingColumns.some((c) => c.name === "storage_location")) {
 // (e.g. recordings.creator_id already outlives a deleted creator by
 // design) — cleanup on delete is handled explicitly in code instead (see
 // deleteAllForRecording, called from recorder.ts's deleteRecording).
+// Singleton (CHECK id = 1) rather than a generic key-value settings table —
+// there's exactly one SMB backend this app talks to, and a typed table
+// beats a stringly-typed KV store for the handful of fields it actually
+// needs. INSERT OR IGNORE below seeds the single row once; every update
+// after that is an UPDATE, never a second INSERT.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS smb_settings (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    enabled INTEGER NOT NULL DEFAULT 0,
+    host TEXT NOT NULL DEFAULT '',
+    port INTEGER NOT NULL DEFAULT 445,
+    share TEXT NOT NULL DEFAULT '',
+    domain TEXT NOT NULL DEFAULT '',
+    username TEXT NOT NULL DEFAULT '',
+    password TEXT NOT NULL DEFAULT '',
+    base_path TEXT NOT NULL DEFAULT '',
+    updated_at TEXT NOT NULL DEFAULT ''
+  );
+`);
+db.exec(`INSERT OR IGNORE INTO smb_settings (id, updated_at) VALUES (1, '${new Date().toISOString()}');`);
+
 db.exec(`
   CREATE TABLE IF NOT EXISTS tags (
     id TEXT PRIMARY KEY,
@@ -168,6 +213,11 @@ const finishRecordingStmt = db.prepare(
 );
 const deleteRecordingStmt = db.prepare(`DELETE FROM recordings WHERE id = ?`);
 const setStorageLocationStmt = db.prepare(`UPDATE recordings SET storage_location = ? WHERE id = ?`);
+
+const getSmbSettingsStmt = db.prepare(`SELECT * FROM smb_settings WHERE id = 1`);
+const setSmbSettingsStmt = db.prepare(
+  `UPDATE smb_settings SET enabled = ?, host = ?, port = ?, share = ?, domain = ?, username = ?, password = ?, base_path = ?, updated_at = ? WHERE id = 1`
+);
 
 const insertTagStmt = db.prepare(`INSERT OR IGNORE INTO tags (id, name) VALUES (?, ?)`);
 const findTagByNameStmt = db.prepare(`SELECT id, name FROM tags WHERE name = ? COLLATE NOCASE`);
@@ -267,7 +317,24 @@ export const statements = {
     run: (id: string) => deleteRecordingStmt.run(id),
   },
   setStorageLocation: {
-    run: (id: string, location: "local" | "s3") => setStorageLocationStmt.run(location, id),
+    run: (id: string, location: "local" | "s3" | "smb") => setStorageLocationStmt.run(location, id),
+  },
+  smbSettings: {
+    get: () => getSmbSettingsStmt.get() as unknown as SmbSettingsRow,
+    /** updated_at is set here (server clock), not accepted from the caller
+     * — same reasoning as every other *_at column in this schema. */
+    set: (row: Omit<SmbSettingsRow, "id" | "updated_at">) =>
+      setSmbSettingsStmt.run(
+        row.enabled,
+        row.host,
+        row.port,
+        row.share,
+        row.domain,
+        row.username,
+        row.password,
+        row.base_path,
+        new Date().toISOString()
+      ),
   },
   tags: {
     /** Idempotent — adding a tag a recording already has (even in

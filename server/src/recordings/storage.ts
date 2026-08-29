@@ -20,15 +20,69 @@ export function sanitizeFileNameComponent(raw: string): string {
   return cleaned || "untitled";
 }
 
-function resolveSafe(fileName: string): string | null {
-  const resolved = path.resolve(env.recordingsDir, fileName);
-  const dir = path.resolve(env.recordingsDir) + path.sep;
+function resolveWithin(baseDir: string, fileName: string): string | null {
+  const resolved = path.resolve(baseDir, fileName);
+  const dir = path.resolve(baseDir) + path.sep;
   if (!resolved.startsWith(dir)) return null; // path traversal attempt
   return resolved;
 }
 
+function resolveSafe(fileName: string): string | null {
+  return resolveWithin(env.recordingsDir, fileName);
+}
+
 export function absolutePath(fileName: string): string | null {
   return resolveSafe(fileName);
+}
+
+/** Same as absolutePath, but rooted at the SMB mount point (env.smbMountDir)
+ * instead of RECORDINGS_DIR — see recordings/smb.ts. Once mounted, this is
+ * an ordinary local path like any other; the only reason it's a separate
+ * function is that it's a different directory, not different mechanics. */
+export function smbAbsolutePath(fileName: string): string | null {
+  return resolveWithin(env.smbMountDir, fileName);
+}
+
+export function smbExistsSync(fileName: string): boolean {
+  const abs = smbAbsolutePath(fileName);
+  return abs ? fs.existsSync(abs) : false;
+}
+
+/** Copies a finished recording's file from local disk onto the (already
+ * mounted) SMB share — a real filesystem copy, not a network upload client,
+ * since the mount already makes the destination an ordinary path. Doesn't
+ * delete the local source; the caller verifies the copy first (see
+ * recorder.ts's offloadToSmb) same as the S3 path's own upload-then-verify
+ * order. */
+export async function copyToSmbMount(fileName: string): Promise<boolean> {
+  const src = resolveSafe(fileName);
+  const dest = smbAbsolutePath(fileName);
+  if (!src || !dest) return false;
+  try {
+    await fsPromises.copyFile(src, dest);
+    return true;
+  } catch (err) {
+    console.error(`[storage] copy to SMB mount failed for ${fileName}:`, err instanceof Error ? err.message : err);
+    return false;
+  }
+}
+
+export async function smbStatFile(fileName: string): Promise<{ size: number } | null> {
+  const abs = smbAbsolutePath(fileName);
+  if (!abs) return null;
+  try {
+    const stat = await fsPromises.stat(abs);
+    return { size: stat.size };
+  } catch {
+    return null;
+  }
+}
+
+export async function deleteSmbFile(fileName: string | null): Promise<void> {
+  if (!fileName) return;
+  const abs = smbAbsolutePath(fileName);
+  if (!abs) return;
+  await fsPromises.unlink(abs).catch(() => {}); // already gone is fine
 }
 
 export async function checkWritable(): Promise<{ ok: true } | { ok: false; error: string }> {

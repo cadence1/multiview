@@ -8,9 +8,11 @@ import "./db.js";
 import { creatorsRouter } from "./routes/creators.js";
 import { statusRouter } from "./routes/status.js";
 import { recordingsRouter } from "./routes/recordings.js";
+import { settingsRouter } from "./routes/settings.js";
 import { startPoller } from "./poller.js";
 import { checkWritable } from "./recordings/storage.js";
 import { backfillAutoTags } from "./recordings/tags.js";
+import * as smb from "./recordings/smb.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -21,6 +23,7 @@ app.use(express.json());
 app.use("/api/creators", creatorsRouter);
 app.use("/api/status", statusRouter);
 app.use("/api/recordings", recordingsRouter);
+app.use("/api/settings", settingsRouter);
 
 app.get("/api/health", (_req, res) => {
   res.json({ ok: true, pollIntervalSeconds: env.pollIntervalSeconds });
@@ -51,6 +54,18 @@ checkWritable().then((result) => {
     );
   }
 });
+
+// A real kernel mount never survives a process restart, but the
+// smb_settings row saying "enabled" does — re-establish it here so a
+// redeploy/crash/restart doesn't silently leave offloaded recordings
+// unreachable until someone happens to re-save the settings.
+if (smb.isEnabled()) {
+  smb.mount().then((result) => {
+    if (!result.ok) {
+      console.error(`[recordings] SMB mount failed on startup: ${result.error} — offload to it will be skipped until this is fixed.`);
+    }
+  });
+}
 
 app.listen(env.port, () => {
   console.log(`Multiview server listening on http://localhost:${env.port}`);

@@ -3,6 +3,7 @@ import { useStore } from "../store.js";
 import type { Recording, RecordingStatus } from "../types.js";
 import { formatBytes, formatRelativeToNow } from "../utils.js";
 import PlatformBadge from "./PlatformBadge.js";
+import SmbSettingsDialog from "./SmbSettingsDialog.js";
 
 // Shared between... nothing else right now, but factored out of the old
 // slide-out RecordingsPanel specifically so the /saved page (SavedPage.tsx)
@@ -14,6 +15,7 @@ const STORAGE_POLL_MS = 30_000;
 export function StorageBar() {
   const storageStats = useStore((s) => s.storageStats);
   const refreshStorageStats = useStore((s) => s.refreshStorageStats);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   useEffect(() => {
     refreshStorageStats().catch(() => {});
@@ -28,10 +30,22 @@ export function StorageBar() {
   const pct = totalBytes > 0 ? Math.min(100, Math.round((usedBytes / totalBytes) * 100)) : 0;
 
   return (
-    <div className="border-b border-base-700 px-3 py-2" title="Disk usage for the whole volume RECORDINGS_DIR lives on, not just Multiview's own recordings">
-      <div className="mb-1 flex items-center justify-between text-[11px] text-slate-400">
+    <div className="border-b border-base-700 px-3 py-2">
+      <div
+        className="mb-1 flex items-center justify-between text-[11px] text-slate-400"
+        title="Disk usage for the whole volume RECORDINGS_DIR lives on, not just Multiview's own recordings"
+      >
         <span>{formatBytes(usedBytes)} used of {formatBytes(totalBytes)}</span>
-        <span>{formatBytes(storageStats.freeBytes)} free</span>
+        <div className="flex items-center gap-2">
+          <span>{formatBytes(storageStats.freeBytes)} free</span>
+          <button
+            onClick={() => setSettingsOpen(true)}
+            className="text-slate-500 hover:text-slate-300"
+            title="Storage settings — offload finished recordings to an SMB share"
+          >
+            ⚙
+          </button>
+        </div>
       </div>
       <div className="h-1.5 w-full overflow-hidden rounded-full bg-base-800">
         <div
@@ -39,6 +53,7 @@ export function StorageBar() {
           style={{ width: `${pct}%` }}
         />
       </div>
+      {settingsOpen && <SmbSettingsDialog onClose={() => setSettingsOpen(false)} />}
     </div>
   );
 }

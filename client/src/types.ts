@@ -43,8 +43,8 @@ export interface Recording {
   file_size_bytes: number | null;
   error: string | null;
   isActive: boolean;
-  /** "s3" once a finished recording has been offloaded — see the server's recorder.ts. */
-  storage_location: "local" | "s3";
+  /** "s3"/"smb" once a finished recording has been offloaded — see the server's recorder.ts. */
+  storage_location: "local" | "s3" | "smb";
   /** Auto-seeded (creator/uploader name, recording date, video date if
    * known and different, bracketed segments in the title/name) plus
    * anything added manually — see the server's recordings/tags.ts. */
@@ -90,4 +90,36 @@ export interface ImportResult {
   imported: number;
   skipped: number;
   errors: string[];
+}
+
+/** Never carries the real password — see the server's routes/settings.ts
+ * doc comment. hasPassword tells the settings dialog whether to show a
+ * "leave blank to keep" placeholder instead of an empty field. */
+export interface SmbSettings {
+  enabled: boolean;
+  host: string;
+  port: number;
+  share: string;
+  domain: string;
+  username: string;
+  hasPassword: boolean;
+  basePath: string;
+  /** Only ever present on the PUT response — a real kernel mount was
+   * attempted right away (see the server's routes/settings.ts) and failed.
+   * Settings are still saved either way; this just means the toggle hasn't
+   * actually taken effect yet. */
+  mountError?: string;
+}
+
+/** What the settings dialog submits — password omitted/blank means "keep
+ * the currently saved one" (server-side convention, see routes/settings.ts). */
+export interface SmbSettingsInput {
+  enabled: boolean;
+  host: string;
+  port: number;
+  share: string;
+  domain: string;
+  username: string;
+  password?: string;
+  basePath: string;
 }

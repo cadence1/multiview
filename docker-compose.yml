@@ -11,4 +11,15 @@ services:
       - DATA_DIR=/app/server/data
     volumes:
       - ./data:/app/server/data
+    # Needed only for the optional SMB storage backend (recordings/smb.ts)
+    # to mount a CIFS share — the app works fine without it, SMB storage
+    # just stays unavailable (mount attempts fail cleanly, logged, nothing
+    # else affected). Docker's own default seccomp profile already allows
+    # the mount/umount2 syscalls conditionally on CAP_SYS_ADMIN being
+    # present (confirmed directly from profiles/seccomp/default.json, not
+    # just documentation) — no seccomp changes needed alongside this, and
+    # this is *not* the same as --privileged (no device access, no broader
+    # capability set, no seccomp bypass — just this one capability).
+    cap_add:
+      - SYS_ADMIN
     restart: unless-stopped

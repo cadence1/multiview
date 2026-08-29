@@ -42,7 +42,14 @@ ENV DATA_DIR=/app/server/data
 # no runtime dependency on GitHub being reachable, no cold-start fetch
 # delay, reproducible builds. See server/yt-dlp.conf for the other half of
 # this fix (pointing yt-dlp at Node as its JS runtime).
-RUN apk add --no-cache ffmpeg python3 py3-pip && \
+# cifs-utils provides the mount.cifs helper the `mount -t cifs` command
+# shells out to — backs the optional SMB storage backend
+# (server/src/recordings/smb.ts), a real kernel CIFS mount rather than an
+# in-process network client (see that module's own doc comment for why).
+# Needs docker-compose.yml's cap_add: SYS_ADMIN on this service to actually
+# be usable — the mount()/umount() syscalls are otherwise blocked
+# regardless of this package being present.
+RUN apk add --no-cache ffmpeg python3 py3-pip cifs-utils && \
     pip install --no-cache-dir --break-system-packages yt-dlp yt-dlp-ejs
 
 COPY server/yt-dlp.conf /etc/yt-dlp.conf

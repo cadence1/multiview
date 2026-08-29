@@ -53,12 +53,14 @@ recordingsRouter.post("/:id/stop", (req, res) => {
   res.status(204).end();
 });
 
-// Local disk is always checked first, S3 only as a fallback — not just an
-// optimization. The video and thumbnail can genuinely end up on different
-// storage independently (a thumbnail upload can fail while the video's own
-// succeeds — see recorder.ts's offloadToS3), so storage_location alone
-// isn't a reliable enough signal for which one actually holds a given file;
-// checking local existence directly is.
+// Local disk is always checked first, then the SMB mount (also a plain
+// local path once mounted — see recordings/smb.ts), S3 only as the last
+// resort since it's the one actual network client left. Not just an
+// optimization: the video and thumbnail can genuinely end up on different
+// storage independently (a copy/upload can fail while the video's own
+// succeeds — see recorder.ts's offloadToS3/offloadToSmb), so
+// storage_location alone isn't a reliable enough signal for which one
+// actually holds a given file; checking existence directly is.
 
 recordingsRouter.get("/:id/file", async (req, res) => {
   const row = recorder.getRecording(req.params.id);
@@ -68,6 +70,10 @@ recordingsRouter.get("/:id/file", async (req, res) => {
     // sendFile natively supports Range requests, needed both for seeking a
     // finished recording and for progressively downloading a large one.
     return res.sendFile(abs);
+  }
+  const smbAbs = storage.smbAbsolutePath(row.file_name);
+  if (smbAbs && storage.smbExistsSync(row.file_name)) {
+    return res.sendFile(smbAbs);
   }
   if (row.storage_location === "s3") {
     return s3.streamObject(row.file_name, req.headers.range, res);
@@ -81,6 +87,10 @@ recordingsRouter.get("/:id/thumbnail", async (req, res) => {
   const abs = storage.absolutePath(row.thumbnail_file_name);
   if (abs && storage.existsSync(row.thumbnail_file_name)) {
     return res.sendFile(abs);
+  }
+  const smbAbs = storage.smbAbsolutePath(row.thumbnail_file_name);
+  if (smbAbs && storage.smbExistsSync(row.thumbnail_file_name)) {
+    return res.sendFile(smbAbs);
   }
   if (row.storage_location === "s3") {
     return s3.streamObject(row.thumbnail_file_name, undefined, res);

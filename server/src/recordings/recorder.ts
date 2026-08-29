@@ -5,6 +5,7 @@ import { statements, type CreatorRow, type RecordingRow, type RecordingStatus } 
 import type { CreatorStatus } from "../platforms/types.js";
 import * as storage from "./storage.js";
 import * as s3 from "./s3.js";
+import * as smb from "./smb.js";
 import * as tags from "./tags.js";
 
 // Live recording via yt-dlp writing MPEG-TS (its own default for live
@@ -413,13 +414,21 @@ async function finalizeRecording(rec: FinishableRecording, code: number | null, 
   // whatever the real outcome was), so a failure here must never propagate
   // up to finishRecording's own catch-all, which would otherwise overwrite
   // an already-successful finalize with "failed". Worst case on a genuine
-  // S3 error is a recording that stays local when it should've moved,
+  // offload error is a recording that stays local when it should've moved,
   // which is just the pre-Phase-2 behavior — not a lost or corrupted row.
-  if (hasContent && status !== "failed" && s3.isEnabled()) {
+  //
+  // S3 and SMB are mutually exclusive in practice — this app talks to
+  // exactly one remote backend at a time. S3 wins if somehow both are
+  // configured at once, since it's the original, longer-standing option.
+  if (hasContent && status !== "failed") {
     try {
-      await offloadToS3(rec.recordingId, fileName, rec.thumbnailFileName);
+      if (s3.isEnabled()) {
+        await offloadToS3(rec.recordingId, fileName, rec.thumbnailFileName);
+      } else if (smb.isEnabled()) {
+        await offloadToSmb(rec.recordingId, fileName, rec.thumbnailFileName);
+      }
     } catch (err) {
-      console.error(`[recorder] ${rec.recordingId} S3 offload threw unexpectedly — keeping local copy:`, err);
+      console.error(`[recorder] ${rec.recordingId} offload threw unexpectedly — keeping local copy:`, err);
     }
   }
 }
@@ -433,18 +442,19 @@ async function offloadToS3(recordingId: string, fileName: string, thumbnailFileN
     return;
   }
   // Flip the DB row *before* removing the local copy, not after — if the
-  // process were to crash in between, "DB says s3, local file still
+  // process were to crash in between, "DB says remote, local file still
   // present too" is a harmless, self-cleaning state (the serving routes
-  // check local disk first and only fall back to S3 — see recordings.ts),
-  // whereas the reverse order risks "DB says local, but the file is
-  // already gone" if the crash lands between the delete and this write.
+  // check local disk first and only fall back to the remote backend — see
+  // recordings.ts), whereas the reverse order risks "DB says local, but
+  // the file is already gone" if the crash lands between the delete and
+  // this write.
   statements.setStorageLocation.run(recordingId, "s3");
 
   // Best-effort and independent of the video's own success — a missing
   // preview image isn't worth losing the disk-space win over, same
   // reasoning as downloadThumbnail's own failure handling elsewhere. Same
   // local-first fallback in the serving routes means it's fine for this to
-  // end up local while the video ends up in S3.
+  // end up local while the video ends up remote.
   if (thumbnailFileName) {
     const thumbAbs = storage.absolutePath(thumbnailFileName);
     if (thumbAbs && (await s3.uploadFile(thumbAbs, thumbnailFileName))) {
@@ -452,7 +462,50 @@ async function offloadToS3(recordingId: string, fileName: string, thumbnailFileN
     }
   }
   await storage.deleteFile(fileName);
-  console.log(`[recorder] ${recordingId} offloaded to S3, local copy removed`);
+  console.log(`[recorder] ${recordingId} offloaded to s3, local copy removed`);
+}
+
+/** Unlike offloadToS3, this is a plain filesystem copy, not a network
+ * upload — env.smbMountDir is a real kernel CIFS mount once smb.mount()
+ * has succeeded (see smb.ts), so "uploading" is just storage.copyToSmbMount
+ * (fs.copyFile under the hood). Confirms the mount is actually live before
+ * touching anything — a container restart wipes any real mount without
+ * touching the smb_settings row that still says "enabled", so isEnabled()
+ * alone isn't proof there's anywhere to copy to right now. */
+async function offloadToSmb(recordingId: string, fileName: string, thumbnailFileName: string | null) {
+  if (!(await smb.isMounted())) {
+    const result = await smb.mount();
+    if (!result.ok) {
+      console.warn(`[recorder] ${recordingId} SMB offload skipped — mount isn't available: ${result.error}`);
+      return;
+    }
+  }
+
+  const localStat = await storage.statFile(fileName);
+  if (!localStat) return;
+  const copied = await storage.copyToSmbMount(fileName);
+  if (!copied) {
+    console.warn(`[recorder] ${recordingId} SMB offload failed — keeping local copy`);
+    return;
+  }
+  const remoteStat = await storage.smbStatFile(fileName);
+  if (!remoteStat || remoteStat.size !== localStat.size) {
+    console.error(
+      `[recorder] ${recordingId} SMB copy verification failed: local is ${localStat.size} bytes, mount reports ${remoteStat?.size ?? "missing"}`
+    );
+    await storage.deleteSmbFile(fileName); // don't leave a truncated/partial copy behind
+    return;
+  }
+
+  // Same ordering reasoning as offloadToS3.
+  statements.setStorageLocation.run(recordingId, "smb");
+
+  if (thumbnailFileName) {
+    const thumbCopied = await storage.copyToSmbMount(thumbnailFileName);
+    if (thumbCopied) await storage.deleteFile(thumbnailFileName);
+  }
+  await storage.deleteFile(fileName);
+  console.log(`[recorder] ${recordingId} offloaded to smb, local copy removed`);
 }
 
 export interface StartRecordingResult {
@@ -833,16 +886,30 @@ export async function deleteRecording(recordingId: string): Promise<{ ok: boolea
   }
   const row = statements.getRecording.get(recordingId);
   if (!row) return { ok: false, error: "not found" };
-  // Best-effort against both local disk and S3 rather than branching on
-  // storage_location — a missing file/object either way is already a no-op
-  // in both deleteFile and deleteObject, and the video/thumbnail can end up
-  // on different storage independently (offloadToS3 keeps the thumbnail
-  // local if only its own upload failed), so a single flag isn't reliable
-  // enough to pick just one to check.
+  // If this recording's real content lives on the SMB share but nothing's
+  // mounted right now (container restart since the offload, or SMB got
+  // disabled since), deleteSmbFile below would silently no-op against the
+  // local, empty mount-point directory instead of ever reaching the actual
+  // remote file — orphaning it there forever. Best-effort attempt to
+  // (re-)establish the mount first; if it fails, the delete below still
+  // proceeds for local/S3, this row is still removed, and the leftover
+  // remote file is a disk-space cost, not a correctness problem.
+  if (row.storage_location === "smb" && smb.isEnabled() && !(await smb.isMounted())) {
+    await smb.mount();
+  }
+
+  // Best-effort against local disk, S3, *and* the SMB mount rather than
+  // branching on storage_location — a missing file either way is already a
+  // no-op in every one of these delete calls, and the video/thumbnail can
+  // end up on different storage independently (offloadToS3/offloadToSmb
+  // keep the thumbnail local if only its own copy failed), so a single flag
+  // isn't reliable enough to pick just one to check.
   await storage.deleteFile(row.file_name);
   await storage.deleteFile(row.thumbnail_file_name);
   await s3.deleteObject(row.file_name);
   if (row.thumbnail_file_name) await s3.deleteObject(row.thumbnail_file_name);
+  await storage.deleteSmbFile(row.file_name);
+  if (row.thumbnail_file_name) await storage.deleteSmbFile(row.thumbnail_file_name);
   statements.tags.deleteAllForRecording(recordingId);
   statements.deleteRecording.run(recordingId);
   return { ok: true };

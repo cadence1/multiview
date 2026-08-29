@@ -1,4 +1,14 @@
-import type { Creator, CreatorStatus, ExportedCreator, ImportResult, Platform, Recording, VolumeStats } from "./types.js";
+import type {
+  Creator,
+  CreatorStatus,
+  ExportedCreator,
+  ImportResult,
+  Platform,
+  Recording,
+  SmbSettings,
+  SmbSettingsInput,
+  VolumeStats,
+} from "./types.js";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`/api${path}`, {
@@ -65,4 +75,15 @@ export const api = {
     }),
   removeRecordingTag: (id: string, name: string) =>
     request<void>(`/recordings/${id}/tags/${encodeURIComponent(name)}`, { method: "DELETE" }),
+  getSmbSettings: () => request<SmbSettings>("/settings/smb"),
+  updateSmbSettings: (settings: SmbSettingsInput) =>
+    request<SmbSettings>("/settings/smb", {
+      method: "PUT",
+      body: JSON.stringify(settings),
+    }),
+  testSmbConnection: (settings: SmbSettingsInput) =>
+    request<{ ok: true }>("/settings/smb/test", {
+      method: "POST",
+      body: JSON.stringify(settings),
+    }),
 };

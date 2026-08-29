@@ -30,6 +30,23 @@ function resolveRecordingsDir(dataDir: string): string {
   return dir;
 }
 
+/** Where the SMB share gets mounted when enabled — a real kernel CIFS
+ * mount (see recordings/smb.ts), not a network client, so anything under
+ * here is an ordinary local path to yt-dlp/ffmpeg/Node's own fs the moment
+ * it's mounted. Deliberately separate from recordingsDir, not the same
+ * directory: an in-progress recording always writes to local disk first
+ * (network-mount latency/reliability isn't something an hours-long active
+ * capture should be exposed to), only moving here once finished — see
+ * recorder.ts's finishRecording. Just an empty local directory (the mount
+ * point) until smb.mount() actually mounts something onto it.*/
+function resolveSmbMountDir(dataDir: string): string {
+  const dir = path.join(dataDir, "smb-mount");
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+  return dir;
+}
+
 const dataDir = resolveDataDir();
 
 export const env = {
@@ -43,6 +60,7 @@ export const env = {
   kickClientSecret: process.env.KICK_CLIENT_SECRET || "",
   pollIntervalSeconds: Number(process.env.POLL_INTERVAL_SECONDS || 300),
   recordingsDir: resolveRecordingsDir(dataDir),
+  smbMountDir: resolveSmbMountDir(dataDir),
   // Refuses to *start* a new recording below this much free disk space, and
   // also stops every currently-active recording if free space drops below
   // it mid-recording (checked independently of the start-time gate — see
